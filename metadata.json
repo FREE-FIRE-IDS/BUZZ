@@ -1,0 +1,6 @@
+{
+  "name": "Can You Run It - PC Requirements",
+  "description": "Compare your PC specs with minimum and recommended system requirements for popular games, powered by RAWG API and Gemini AI evaluation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
