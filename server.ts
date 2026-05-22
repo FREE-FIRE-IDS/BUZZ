@@ -8,6 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { FALLBACK_GAMES } from "./api/fallback-data";
 
 // Load environment variables
 dotenv.config();
@@ -186,13 +187,39 @@ app.get("/api/games", async (req, res) => {
 
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`RAWG API error: ${response.statusText}`);
+      throw new Error(`RAWG API error: ${response.statusText} (${response.status})`);
     }
     const data = await response.json();
     res.json(data);
   } catch (error: any) {
-    console.error("Error in /api/games proxy:", error);
-    res.status(500).json({ error: error.message || "Failed to search games" });
+    console.warn("[Express] RAWG API search failed. Engaging resilient local database:", error);
+    
+    const { search, genres } = req.query;
+    let filteredList = [...FALLBACK_GAMES];
+
+    if (search) {
+      const q = search.toString().toLowerCase();
+      filteredList = filteredList.filter(
+        (g) => g.name.toLowerCase().includes(q) || g.slug.toLowerCase().includes(q)
+      );
+    }
+
+    if (genres) {
+      const gen = genres.toString().toLowerCase();
+      filteredList = filteredList.filter((g) =>
+        g.genres?.some(
+          (genre) =>
+            genre.slug.toLowerCase().includes(gen) ||
+            genre.name.toLowerCase().includes(gen)
+        )
+      );
+    }
+
+    res.json({
+      results: filteredList,
+      count: filteredList.length,
+      note: "Recovered from high-fidelity fallback database"
+    });
   }
 });
 
@@ -200,13 +227,27 @@ app.get("/api/games", async (req, res) => {
 app.get("/api/games/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const url = `https://api.rawg.io/api/games/${id}?key=${RAWG_API_KEY}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`RAWG API error: ${response.statusText}`);
+    const numericId = parseInt(id);
+
+    try {
+      const url = `https://api.rawg.io/api/games/${id}?key=${RAWG_API_KEY}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        res.json(data);
+        return;
+      }
+    } catch (e) {
+      console.warn(`[Express] Game details fetch failed for ${id}, checking local database:`, e);
     }
-    const data = await response.json();
-    res.json(data);
+
+    const localGame = FALLBACK_GAMES.find((g) => g.id === numericId);
+    if (localGame) {
+      res.json(localGame);
+      return;
+    }
+
+    res.status(404).json({ error: "Game not found" });
   } catch (error: any) {
     console.error(`Error in /api/games/${req.params.id} proxy:`, error);
     res.status(500).json({ error: error.message || "Failed to fetch game details" });
@@ -217,13 +258,33 @@ app.get("/api/games/:id", async (req, res) => {
 app.get("/api/games/:id/screenshots", async (req, res) => {
   try {
     const { id } = req.params;
-    const url = `https://api.rawg.io/api/games/${id}/screenshots?key=${RAWG_API_KEY}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`RAWG API error: ${response.statusText}`);
+    const numericId = parseInt(id);
+
+    try {
+      const url = `https://api.rawg.io/api/games/${id}/screenshots?key=${RAWG_API_KEY}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        res.json(data);
+        return;
+      }
+    } catch (e) {
+      console.warn(`[Express] Screenshots fetch failed for ${id}, checking local database:`, e);
     }
-    const data = await response.json();
-    res.json(data);
+
+    const localGame = FALLBACK_GAMES.find((g) => g.id === numericId);
+    if (localGame) {
+      res.json({
+        results: [
+          { id: 1, image: localGame.background_image },
+          { id: 2, image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80" }
+        ],
+        count: 2
+      });
+      return;
+    }
+
+    res.status(404).json({ error: "Screenshots not found" });
   } catch (error: any) {
     console.error(`Error in /api/games/${req.params.id}/screenshots proxy:`, error);
     res.status(500).json({ error: error.message || "Failed to fetch game screenshots" });

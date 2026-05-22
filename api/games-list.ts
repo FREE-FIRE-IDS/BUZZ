@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { FALLBACK_GAMES } from "./fallback-data";
 
 const RAWG_API_KEY = process.env.RAWG_API_KEY || "2abdb2d418004ecc9d0b6da28496b286";
 
@@ -16,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`RAWG API error: ${response.statusText}`);
+      throw new Error(`RAWG API error: ${response.statusText} (${response.status})`);
     }
     const data = await response.json();
     
@@ -24,7 +25,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
     res.status(200).json(data);
   } catch (error: any) {
-    console.error("Error in serverless /api/games-list:", error);
-    res.status(500).json({ error: error.message || "Failed to search games listings" });
+    console.warn("RAWG API connection / response error. Resolving locally from high-fidelity standby database of popular PC games:", error);
+    
+    // Client-safe fallback resolution
+    const { search, genres } = req.query;
+    let filteredList = [...FALLBACK_GAMES];
+
+    if (search) {
+      const q = search.toString().toLowerCase();
+      filteredList = filteredList.filter(
+        (g) => g.name.toLowerCase().includes(q) || g.slug.toLowerCase().includes(q)
+      );
+    }
+
+    if (genres) {
+      const gen = genres.toString().toLowerCase();
+      filteredList = filteredList.filter((g) =>
+        g.genres?.some(
+          (genre) =>
+            genre.slug.toLowerCase().includes(gen) ||
+            genre.name.toLowerCase().includes(gen)
+        )
+      );
+    }
+
+    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
+    res.status(200).json({
+      results: filteredList,
+      count: filteredList.length,
+      note: "Recovered from high-fidelity fallback database"
+    });
   }
 }
+
