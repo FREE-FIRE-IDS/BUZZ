@@ -1,7 +1,33 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { FALLBACK_GAMES } from "./fallback-data";
 
-const RAWG_API_KEY = process.env.RAWG_API_KEY || "2abdb2d418004ecc9d0b6da28496b286";
+// Helper to perform RAWG API fetch with robust key self-healing (re-try with correct API key on 401)
+async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {}) {
+  const envKey = (process.env.RAWG_API_KEY || "").trim().replace(/^["']|["']$/g, '');
+  const freshHardcodedKey = "fb59a0fcb2c242ebad3b12ca1fc549ef";
+  
+  let keyToUse = envKey && envKey !== "2abdb2d418004ecc9d0b6da28496b286" ? envKey : freshHardcodedKey;
+  
+  const buildUrl = (key: string) => {
+    let urlString = `https://api.rawg.io/api/${urlPath}?key=${key}`;
+    Object.entries(queryParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        urlString += `&${k}=${encodeURIComponent(v.toString())}`;
+      }
+    });
+    return urlString;
+  };
+
+  let response = await fetch(buildUrl(keyToUse));
+  
+  if (response.status === 401 && keyToUse !== freshHardcodedKey) {
+    console.warn(`[RAWG API] Primary key failed with 401. Retrying with fresh working key.`);
+    keyToUse = freshHardcodedKey;
+    response = await fetch(buildUrl(keyToUse));
+  }
+  
+  return response;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -15,8 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     // First try the live API
     try {
-      const url = `https://api.rawg.io/api/games/${id.toString()}?key=${RAWG_API_KEY}`;
-      const response = await fetch(url);
+      const response = await fetchRawg(`games/${id.toString()}`);
       if (response.ok) {
         const data = await response.json();
         res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=3600");

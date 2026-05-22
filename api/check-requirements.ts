@@ -23,6 +23,16 @@ function getGeminiClient(): GoogleGenAI | null {
 
 // Basic heuristic parser for fallback evaluations when GEMINI_API_KEY is missing
 function fallbackHeuristicComparison(requirements: { minimum?: string; recommended?: string }, userSpecs: any) {
+  const safeSpecs = {
+    os: userSpecs?.os || "Windows 10 64-bit",
+    cpu: userSpecs?.cpu || "Intel Core i5 (4 Cores)",
+    gpu: userSpecs?.gpu || "NVIDIA GeForce GTX 1050 / AMD RX 560",
+    ram: userSpecs?.ram || "8 GB",
+    storage: userSpecs?.storageFree || userSpecs?.storage || "250 GB Free",
+    vram: userSpecs?.vram || "4 GB",
+    directx: userSpecs?.directx || "DirectX 12"
+  };
+
   const getSpecsHeuristics = (reqText: string | undefined, isRecommended: boolean) => {
     let text = reqText || "";
     if (!text || text.trim() === "Not specified" || text.toLowerCase().includes("evaluate system")) {
@@ -41,12 +51,12 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
     if (ramMatch) {
       requiredRam = ramMatch[1] + " " + ramMatch[2].toUpperCase();
     }
-    const userRamVal = parseInt(userSpecs.ram) || 8;
+    const userRamVal = parseInt(safeSpecs.ram) || 8;
     const reqRamVal = parseInt(requiredRam) || 8;
     const ramPass = userRamVal >= reqRamVal;
 
     // Parse OS
-    const osPass = !userSpecs.os.toLowerCase().includes("mac") || lowerReq.includes("mac");
+    const osPass = !safeSpecs.os.toLowerCase().includes("mac") || lowerReq.includes("mac");
     let requiredOS = isRecommended ? "Windows 10/11 64-bit" : "Windows 10 64-bit";
     if (lowerReq.includes("windows 11")) requiredOS = "Windows 11 64-bit";
     else if (lowerReq.includes("windows 10")) requiredOS = "Windows 10 64-bit";
@@ -62,7 +72,7 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
     else if (lowerReq.includes("6 core") || lowerReq.includes("hexa-core") || lowerReq.includes("6-core")) reqCpuCores = 6;
     else if (lowerReq.includes("4 core") || lowerReq.includes("quad-core") || lowerReq.includes("4-core")) reqCpuCores = 4;
 
-    const userCpuCores = parseInt(userSpecs.cpu.match(/(\d+)\s*Cores/i)?.[1] || "4");
+    const userCpuCores = parseInt(safeSpecs.cpu.match(/(\d+)\s*Cores/i)?.[1] || "4");
     const cpuPass = userCpuCores >= reqCpuCores;
 
     let requiredGpu = isRecommended ? "NVIDIA RTX 3060 / AMD RX 6600 (6-8 GB VRAM)" : "NVIDIA GTX 1050 Ti / AMD RX 570 (4 GB VRAM)";
@@ -74,7 +84,7 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
     else if (lowerReq.includes("6 gb vram") || lowerReq.includes("6gb") || lowerReq.includes("6 gb dedicated")) reqGpuVram = 6;
     else if (lowerReq.includes("4 gb vram") || lowerReq.includes("4gb") || lowerReq.includes("4 gb dedicated")) reqGpuVram = 4;
 
-    const userGpuVramVal = parseInt(userSpecs.vram) || 4;
+    const userGpuVramVal = parseInt(safeSpecs.vram) || 4;
     const gpuPass = userGpuVramVal >= reqGpuVram;
     
     // Storage
@@ -83,7 +93,7 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
     if (storageMatch) {
       requiredStorage = storageMatch[1] + " GB";
     }
-    const userStorageVal = parseInt(userSpecs.storageFree || userSpecs.storage) || 245;
+    const userStorageVal = parseInt(safeSpecs.storage) || 245;
     const reqStorageVal = parseInt(requiredStorage) || 50;
     const storagePass = userStorageVal >= reqStorageVal;
 
@@ -92,7 +102,7 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
       specs: {
         cpu: {
           required: requiredCpu,
-          user: userSpecs.cpu,
+          user: safeSpecs.cpu,
           pass: cpuPass,
           reason: cpuPass 
             ? `Your CPU has ${userCpuCores} Cores which meets or exceeds the required ${reqCpuCores} logical cores.`
@@ -100,7 +110,7 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
         },
         gpu: {
           required: requiredGpu,
-          user: `${userSpecs.gpu} (${userSpecs.vram || "4 GB"} VRAM, ${userSpecs.directx || "DirectX 12"})`,
+          user: `${safeSpecs.gpu} (${safeSpecs.vram || "4 GB"} VRAM, ${safeSpecs.directx || "DirectX 12"})`,
           pass: gpuPass,
           reason: gpuPass 
             ? `Your graphics card VRAM (${userGpuVramVal} GB) is compatible with required shaders parameters.`
@@ -108,26 +118,26 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
         },
         ram: {
           required: requiredRam,
-          user: userSpecs.ram,
+          user: safeSpecs.ram,
           pass: ramPass,
           reason: ramPass 
-            ? `Your ${userSpecs.ram} meets or exceeds the required ${requiredRam}.`
-            : `Your ${userSpecs.ram} is insufficient for the required ${requiredRam}.`
+            ? `Your ${safeSpecs.ram} meets or exceeds the required ${requiredRam}.`
+            : `Your ${safeSpecs.ram} is insufficient for the required ${requiredRam}.`
         },
         os: {
           required: requiredOS,
-          user: userSpecs.os,
+          user: safeSpecs.os,
           pass: osPass,
           reason: osPass 
-            ? `Your OS (${userSpecs.os}) is fully compatible.`
+            ? `Your OS (${safeSpecs.os}) is fully compatible.`
             : `Mac OS/Linux is not natively supported by standard DirectX builds.`
         },
         storage: {
           required: requiredStorage,
-          user: userSpecs.storageFree || userSpecs.storage,
+          user: safeSpecs.storage,
           pass: storagePass,
           reason: storagePass
-            ? `Remaining storage space (${userSpecs.storageFree || userSpecs.storage}) meets the required ${requiredStorage}.`
+            ? `Remaining storage space (${safeSpecs.storage}) meets the required ${requiredStorage}.`
             : `Insufficient remaining storage space. You need at least ${requiredStorage} available.`
         }
       }
@@ -204,7 +214,7 @@ Storage Remaining: ${userSpecs.storageFree || userSpecs.storage}
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         systemInstruction: systemInstruction,

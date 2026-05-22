@@ -1016,8 +1016,40 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
               placeholder={importerPlatform === "windows" ? "Right-click in PowerShell to paste, press Enter, copy the 'CYRI_SPECS: ...' line or paste output..." : "Paste the 'CYRI_SPECS: ...' terminal line here..."}
               value={psPasteText}
               onChange={(e) => {
-                setPsPasteText(e.target.value);
+                const val = e.target.value;
+                setPsPasteText(val);
                 setImportError("");
+                const lowerVal = val.toLowerCase();
+                if (
+                  lowerVal.includes("cyri_specs") || 
+                  (lowerVal.includes("cpu") && lowerVal.includes("gpu")) || 
+                  (lowerVal.includes("processor") && lowerVal.includes("graphics"))
+                ) {
+                  try {
+                    handleImportSpecs(val);
+                  } catch (err) {
+                    // Fail silently while typing to maintain smooth user workflow
+                  }
+                }
+              }}
+              onPaste={(e) => {
+                const pastedText = e.clipboardData.getData("text");
+                if (pastedText) {
+                  setPsPasteText(pastedText);
+                  setImportError("");
+                  const lowerVal = pastedText.toLowerCase();
+                  if (
+                    lowerVal.includes("cyri_specs") || 
+                    (lowerVal.includes("cpu") && lowerVal.includes("gpu")) || 
+                    (lowerVal.includes("processor") && lowerVal.includes("graphics"))
+                  ) {
+                    try {
+                      handleImportSpecs(pastedText);
+                    } catch (err: any) {
+                      setImportError(err.message || "Parsing failed. Double-check pasted content.");
+                    }
+                  }
+                }
               }}
             />
             {importError && (
