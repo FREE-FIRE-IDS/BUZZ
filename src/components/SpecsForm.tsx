@@ -327,10 +327,11 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
     }, 1500);
   };
 
-  const handleImportSpecs = () => {
+  const handleImportSpecs = (textOverride?: string) => {
     try {
       setImportError("");
-      if (!psPasteText.trim()) {
+      const textToRun = typeof textOverride === "string" ? textOverride : psPasteText;
+      if (!textToRun.trim()) {
         throw new Error("Pasted specs box is empty. Run and paste the PowerShell command first!");
       }
 
@@ -341,8 +342,8 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
       let parsedFree = "";
 
       // Check if it has CYRI_SPECS string
-      const specLineMatch = psPasteText.match(/CYRI_SPECS:\s*(.+)/i);
-      const textToParse = specLineMatch ? specLineMatch[1] : psPasteText;
+      const specLineMatch = textToRun.match(/CYRI_SPECS:\s*(.+)/i);
+      const textToParse = specLineMatch ? specLineMatch[1] : textToRun;
 
       if (textToParse.includes("|") && textToParse.includes("=")) {
         const keyValues = textToParse.split("|");
@@ -360,7 +361,7 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
         });
       } else {
         // Fallback line by line parsing
-        const lines = psPasteText.split("\n");
+        const lines = textToRun.split("\n");
         lines.forEach(line => {
           const cleanLine = line.trim();
           if (cleanLine.toLowerCase().includes("cpu") || cleanLine.toLowerCase().includes("processor")) {
@@ -430,6 +431,21 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
       setIsEditing(false);
     } catch (err: any) {
       setImportError(err.message || "Parsing failed. Double-check pasted content.");
+    }
+  };
+
+  const handleAutoPasteFromClipboard = async () => {
+    try {
+      setImportError("");
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        throw new Error("Clipboard is empty or permissions to read were denied. Please run the scanner and try again.");
+      }
+      setPsPasteText(text);
+      handleImportSpecs(text);
+    } catch (err: any) {
+      console.warn("Clipboard auto-read failed", err);
+      setImportError("Clipboard access blocked. Please click inside the box below and paste manually (Ctrl+V or Command+V).");
     }
   };
 
@@ -1007,24 +1023,35 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
             {importError && (
               <p className="text-[10px] text-rose-400 font-semibold font-mono">{importError}</p>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => {
-                  setPsPasteText("");
-                  setShowPsImporter(false);
-                }}
-                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-xs font-bold text-slate-400 hover:text-white rounded-xl transition duration-150 cursor-pointer"
+                onClick={handleAutoPasteFromClipboard}
+                className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Automatically read your clipboard and import diagnostic results instantly without pressing manual keys."
               >
-                Cancel
+                <RefreshCw className="w-3.5 h-3.5 animate-spin-slow shrink-0" />
+                Auto-Import from Clipboard (One Tap)
               </button>
-              <button
-                type="button"
-                onClick={handleImportSpecs}
-                className="px-5 py-2 bg-indigo-500 hover:bg-indigo-400 text-xs font-bold text-slate-950 rounded-xl transition duration-150 shadow-md shadow-indigo-500/10 cursor-pointer"
-              >
-                Analyze & Apply Hardware Specs
-              </button>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPsPasteText("");
+                    setShowPsImporter(false);
+                  }}
+                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-xs font-bold text-slate-400 hover:text-white rounded-xl transition duration-150 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleImportSpecs()}
+                  className="px-5 py-2 bg-indigo-500 hover:bg-indigo-400 text-xs font-bold text-slate-950 rounded-xl transition duration-150 shadow-md shadow-indigo-500/10 cursor-pointer"
+                >
+                  Analyze & Apply Hardware Specs
+                </button>
+              </div>
             </div>
           </div>
         </div>

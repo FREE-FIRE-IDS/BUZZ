@@ -3,7 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Game } from "../src/types";
+export interface Game {
+  id: number;
+  name: string;
+  slug: string;
+  released: string;
+  metacritic: number | null;
+  rating: number;
+  ratings_count: number;
+  background_image: string;
+  playtime: number;
+  genres: Array<{ id: number; name: string; slug: string }>;
+  parent_platforms?: Array<{ platform: { id: number; name: string; slug: string } }>;
+  platforms?: Array<{
+    platform: { id: number; name: string; slug: string };
+    requirements_en?: { minimum: string; recommended: string } | null;
+  }>;
+}
 
 export const FALLBACK_GAMES: Game[] = [
   {
