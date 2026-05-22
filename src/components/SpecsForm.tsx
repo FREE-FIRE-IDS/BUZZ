@@ -5,8 +5,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Cpu, Layers, HardDrive, Edit2, Check, RefreshCw, CpuIcon, Eye, HelpCircle, Terminal, Copy } from "lucide-react";
-import { UserSpecs } from "../types";
-import { HARDWARE_PRESETS, detectSystemSpecs, detectStorageSpace } from "../utils";
+import { UserSpecs, CyriState } from "../types";
+import { HARDWARE_PRESETS, detectSystemSpecs, detectStorageSpace, parseCpuSpecs, parseGpuSpecs } from "../utils";
 import { POPULAR_GPUS, POPULAR_CPUS, VRAM_OPTIONS, DDR_OPTIONS, DIRECTX_OPTIONS } from "../hardwareData";
 
 // Categorized processor generations grouping for older and newer series matching 1st to 14th Gen, Ryzen, M-series Silicon
@@ -28,6 +28,42 @@ const CPU_GENERATIONS = [
     filter: (name: string) => name.includes("i9-12") || name.includes("i7-12") || name.includes("i5-12") || name.includes("i3-12")
   },
   {
+    name: "Intel 11th Gen (Rocket Lake)",
+    filter: (name: string) => name.includes("i9-11") || name.includes("i7-11") || name.includes("i5-11") || name.includes("i3-11")
+  },
+  {
+    name: "Intel 10th Gen (Comet Lake)",
+    filter: (name: string) => name.includes("i9-10") || name.includes("i7-10") || name.includes("i5-10") || name.includes("i3-10")
+  },
+  {
+    name: "Intel 9th Gen (Coffee Lake-R)",
+    filter: (name: string) => name.includes("i9-9") || name.includes("i7-9") || name.includes("i5-9") || name.includes("i3-9")
+  },
+  {
+    name: "Intel 8th Gen (Coffee Lake)",
+    filter: (name: string) => name.includes("i7-8") || name.includes("i5-8") || name.includes("i3-8") || name.includes("8700") || name.includes("8600") || name.includes("8400") || name.includes("8100")
+  },
+  {
+    name: "Intel 7th Gen (Kaby Lake)",
+    filter: (name: string) => name.includes("i7-7") || name.includes("i5-7") || name.includes("i3-7") || name.includes("7700") || name.includes("7600") || name.includes("7400") || name.includes("7100")
+  },
+  {
+    name: "Intel 6th Gen (Skylake)",
+    filter: (name: string) => name.includes("i7-6") || name.includes("i5-6") || name.includes("i3-6") || name.includes("6700") || name.includes("6600") || name.includes("6400") || name.includes("6100")
+  },
+  {
+    name: "Intel 4th & 5th Gen (Haswell)",
+    filter: (name: string) => name.includes("-47") || name.includes("-46") || name.includes("-45") || name.includes("-44") || name.includes("-41") || name.includes("-57") || name.includes("-56") || name.includes("4790") || name.includes("4770") || name.includes("4690") || name.includes("4590") || name.includes("4460") || name.includes("4130")
+  },
+  {
+    name: "Intel 2nd & 3rd Gen (Sandy/Ivy)",
+    filter: (name: string) => name.includes("-37") || name.includes("-35") || name.includes("-34") || name.includes("-32") || name.includes("-26") || name.includes("-25") || name.includes("-21") || name.includes("3770") || name.includes("3570") || name.includes("3470") || name.includes("3220") || name.includes("2600") || name.includes("2500") || name.includes("2100")
+  },
+  {
+    name: "Intel 1st Gen & Core 2 Duo",
+    filter: (name: string) => name.includes("Core 2") || name.includes("i7-920") || name.includes("i7-860") || name.includes("i5-750") || name.includes("i3-530") || name.includes("Pentium") || name.includes("Q9650") || name.includes("Q6600")
+  },
+  {
     name: "AMD Ryzen Modern (7000/8050/9000)",
     filter: (name: string) => name.startsWith("AMD") && (name.includes("9950") || name.includes("9900") || name.includes("9700") || name.includes("9600") || name.includes("8700G") || name.includes("8600G") || name.includes("8500G") || name.includes("7950") || name.includes("7900") || name.includes("7800") || name.includes("7700") || name.includes("7600") || name.includes("7500"))
   },
@@ -40,7 +76,7 @@ const CPU_GENERATIONS = [
     filter: (name: string) => name.startsWith("AMD") && !name.includes("Ryzen") && (name.includes("FX-") || name.includes("Athlon") || name.includes("Phenom"))
   },
   {
-    name: "Apple Silicon M1/M2/M3",
+    name: "Apple Silicon M1/M2/M3/M4",
     filter: (name: string) => name.includes("Apple M")
   }
 ];
@@ -97,11 +133,13 @@ const GPU_GENERATIONS = [
 ];
 
 interface SpecsFormProps {
+  cyriState: CyriState;
+  onStateChange: (state: CyriState) => void;
   currentSpecs: UserSpecs;
   onSpecsChange: (specs: UserSpecs) => void;
 }
 
-export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProps) {
+export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSpecsChange }: SpecsFormProps) {
   const [specs, setSpecs] = useState<UserSpecs>(currentSpecs);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -124,12 +162,169 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
   const gpuSuggestRef = useRef<HTMLDivElement>(null);
   const cpuSuggestRef = useRef<HTMLDivElement>(null);
 
-  const psCommand = `chcp 65001 >$null; $cpu = (Get-CimInstance Win32_Processor).Name; $gpuObj = Get-CimInstance Win32_VideoController | Select-Object -First 1; $gpu = $gpuObj.Name; $ram = "$([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)) GB"; $free = "$([Math]::Round((Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='C:'\\").FreeSpace/1GB)) GB Remaining"; $tot = "$([Math]::Round((Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='C:'\\").Size/1GB)) GB SSD"; echo \\"CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=$tot|Free=$free\\"`;
+  const [importerPlatform, setImporterPlatform] = useState<"windows" | "macos" | "linux">("windows");
+
+  const windowsCommand = `chcp 65001 >$null; $cpu = (Get-CimInstance Win32_Processor).Name; $gpuObj = Get-CimInstance Win32_VideoController | Select-Object -First 1; $gpu = $gpuObj.Name; $ram = "$([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)) GB"; $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $free = "$([Math]::Round($disk.FreeSpace/1GB)) GB Remaining"; $tot = "$([Math]::Round($disk.Size/1GB)) GB SSD"; echo "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=$tot|Free=$free"`;
+
+  const macosCommand = `cpu=$(sysctl -n machdep.cpu.brand_string); gpu=$(system_profiler SPDisplaysDataType | grep "Chipset Model" | head -n 1 | cut -d: -f2 | xargs); ram="$(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"; disk_tot=$(df -h / | tail -1 | awk '{print $2}'); disk_free=$(df -h / | tail -1 | awk '{print $4}'); echo "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
+
+  const linuxCommand = `cpu=$(lscpu | grep "Model name:" | head -n 1 | cut -d: -f2- | xargs); gpu=$(lspci | grep -i -E "vga|3d" | head -n 1 | cut -d: -f3 | xargs); ram="\$(free -g | grep Mem: | awk '{print \$2}') GB"; disk_tot=\$(df -h / | tail -1 | awk '{print \$2}'); disk_free=\$(df -h / | tail -1 | awk '{print \$4}'); echo "CYRI_SPECS: CPU=\$cpu|GPU=\$gpu|RAM=\$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
 
   const copyPsCommand = () => {
-    navigator.clipboard.writeText(psCommand);
+    const cmd = importerPlatform === "windows" ? windowsCommand : importerPlatform === "macos" ? macosCommand : linuxCommand;
+    navigator.clipboard.writeText(cmd);
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 3000);
+  };
+
+  const downloadFile = async (filename: "cyri-scanner.bat" | "cyri-scanner.ps1") => {
+    try {
+      const response = await fetch(`/scanner/${filename}`);
+      if (!response.ok) throw new Error("File fetch failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Blob download failed, falling back to direct target=_blank anchor anchor link:", e);
+      const link = document.createElement("a");
+      link.href = `/scanner/${filename}`;
+      link.download = filename;
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleDownloadScanner = () => {
+    // Default to downloading the highly reliable .bat file for double-click simplicity on Windows
+    downloadFile("cyri-scanner.bat");
+    setShowPsImporter(true);
+    setShowDbSync(false);
+  };
+
+  const handleDetectAgain = () => {
+    if (!cyriState.real_specs) return;
+    onStateChange({
+      ...cyriState,
+      custom_specs: null,
+      mode: "real"
+    });
+    setSpecs(cyriState.real_specs);
+    setGpuInput(cyriState.real_specs.gpu);
+    setCpuInput(cyriState.real_specs.cpu);
+    onSpecsChange(cyriState.real_specs);
+    setIsEditing(false);
+  };
+
+  const handleDoneCustomizing = () => {
+    let finalCpu = cpuInput.trim();
+    if (finalCpu && !finalCpu.includes("Cores")) {
+      const analyzed = parseCpuSpecs(finalCpu);
+      finalCpu = `${finalCpu} (${analyzed.cores} Cores)`;
+    }
+    const finalGpu = gpuInput.trim();
+    const updatedSpecs = {
+      ...specs,
+      cpu: finalCpu || specs.cpu,
+      gpu: finalGpu || specs.gpu
+    };
+    setSpecs(updatedSpecs);
+    setCpuInput(updatedSpecs.cpu);
+    setGpuInput(updatedSpecs.gpu);
+    onStateChange({
+      ...cyriState,
+      custom_specs: updatedSpecs,
+      mode: "custom"
+    });
+    onSpecsChange(updatedSpecs);
+  };
+
+  // Database Synchronization & Updates (DATA UPDATE SYSTEM)
+  const [showDbSync, setShowDbSync] = useState(false);
+  const [gpuJsonPaste, setGpuJsonPaste] = useState("");
+  const [cpuJsonPaste, setCpuJsonPaste] = useState("");
+  const [dbSyncFeedback, setDbSyncFeedback] = useState("");
+  const [dbSyncError, setDbSyncError] = useState("");
+
+  const loadDefaultToForm = () => {
+    setGpuJsonPaste(JSON.stringify(POPULAR_GPUS, null, 2));
+    setCpuJsonPaste(JSON.stringify(POPULAR_CPUS, null, 2));
+    setDbSyncFeedback("Successfully loaded running GPU and CPU databases into the editor textareas!");
+    setDbSyncError("");
+    setTimeout(() => setDbSyncFeedback(""), 4000);
+  };
+
+  const handleDatabaseSync = () => {
+    setDbSyncError("");
+    setDbSyncFeedback("");
+
+    let syncedGpus = 0;
+    let syncedCpus = 0;
+
+    if (gpuJsonPaste.trim()) {
+      try {
+        const parsed = JSON.parse(gpuJsonPaste);
+        if (!Array.isArray(parsed)) {
+          throw new Error("GPU JSON must be an array of objects matching the HardwareMetadata structure");
+        }
+        for (const item of parsed) {
+          if (!item.name || typeof item.tier !== "number") {
+            throw new Error(`Invalid item: ${JSON.stringify(item)}. Each GPU object in the array must contain at least 'name' (string) and 'tier' (number).`);
+          }
+        }
+        localStorage.setItem("cyri_gpu_db_override", JSON.stringify(parsed));
+        syncedGpus = parsed.length;
+      } catch (err: any) {
+        setDbSyncError(`GPU Syntax Error: ${err.message}`);
+        return;
+      }
+    }
+
+    if (cpuJsonPaste.trim()) {
+      try {
+        const parsed = JSON.parse(cpuJsonPaste);
+        if (!Array.isArray(parsed)) {
+          throw new Error("CPU JSON must be an array of objects matching the HardwareMetadata structure");
+        }
+        for (const item of parsed) {
+          if (!item.name || typeof item.tier !== "number") {
+            throw new Error(`Invalid item: ${JSON.stringify(item)}. Each CPU object in the array must contain at least 'name' (string) and 'tier' (number).`);
+          }
+        }
+        localStorage.setItem("cyri_cpu_db_override", JSON.stringify(parsed));
+        syncedCpus = parsed.length;
+      } catch (err: any) {
+        setDbSyncError(`CPU Syntax Error: ${err.message}`);
+        return;
+      }
+    }
+
+    if (syncedCpus === 0 && syncedGpus === 0) {
+      setDbSyncError("Please paste at least one GPU or CPU JSON array to apply synchronization.");
+      return;
+    }
+
+    setDbSyncFeedback(`Database Auto-Sync Successful! Synchronized ${syncedGpus} GPUs and ${syncedCpus} CPUs. Reloading page to apply changes...`);
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+  };
+
+  const handleResetDatabase = () => {
+    localStorage.removeItem("cyri_gpu_db_override");
+    localStorage.removeItem("cyri_cpu_db_override");
+    setDbSyncFeedback("All hardware database overrides cleared. Restoring core native datasets...");
+    setDbSyncError("");
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
   };
 
   const handleImportSpecs = () => {
@@ -188,9 +383,15 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
       }
 
       // Beautify strings
-      const cleanedCpu = parsedCpu 
+      let cleanedCpu = parsedCpu 
         ? parsedCpu.replace(/@.+/g, "").replace(/\(R\)/g, "").replace(/\(TM\)/g, "").replace(/\s+/g, " ").trim()
         : specs.cpu;
+
+      // Ensure CPU has Cores parsed and saved cleanly
+      if (cleanedCpu && !cleanedCpu.includes("Cores")) {
+        const analyzed = parseCpuSpecs(cleanedCpu);
+        cleanedCpu = `${cleanedCpu} (${analyzed.cores} Cores)`;
+      }
 
       const cleanedGpu = parsedGpu 
         ? parsedGpu.replace(/\(R\)/g, "").replace(/\(TM\)/g, "").replace(/\s+/g, " ").trim()
@@ -218,6 +419,11 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
       setSpecs(finalSpecs);
       setGpuInput(finalSpecs.gpu);
       setCpuInput(finalSpecs.cpu);
+      onStateChange({
+        real_specs: finalSpecs,
+        custom_specs: null,
+        mode: "real"
+      });
       onSpecsChange(finalSpecs);
       setPsPasteText("");
       setShowPsImporter(false);
@@ -259,6 +465,11 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     setSpecs(enhancedSpecs);
     setGpuInput(enhancedSpecs.gpu);
     setCpuInput(enhancedSpecs.cpu);
+    onStateChange({
+      ...cyriState,
+      custom_specs: enhancedSpecs,
+      mode: "custom"
+    });
     onSpecsChange(enhancedSpecs);
     setIsEditing(false);
   };
@@ -268,20 +479,36 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     setSpecs(freshlyDetected);
     setGpuInput(freshlyDetected.gpu);
     setCpuInput(freshlyDetected.cpu);
+    onStateChange({
+      ...cyriState,
+      custom_specs: freshlyDetected,
+      mode: "custom"
+    });
     onSpecsChange(freshlyDetected);
 
     // Additionally fire off async remaining storage detection to refresh drive stats
     detectStorageSpace().then((storageInfo) => {
       if (storageInfo) {
         setSpecs(prev => {
-          const merged = {
+          return {
             ...prev,
             storage: storageInfo.storage,
             storageFree: storageInfo.storageFree
           };
-          onSpecsChange(merged);
-          return merged;
         });
+        
+        // Safely update parent state outside of the setSpecs state-updater phase
+        const finalMerged = {
+          ...freshlyDetected,
+          storage: storageInfo.storage,
+          storageFree: storageInfo.storageFree
+        };
+        onStateChange({
+          ...cyriState,
+          custom_specs: finalMerged,
+          mode: "custom"
+        });
+        onSpecsChange(finalMerged);
       }
     }).catch(err => console.warn("Redetect storage space fail skipped:", err));
   };
@@ -289,6 +516,11 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
   const handleInputChange = (field: keyof UserSpecs, value: string) => {
     const updated = { ...specs, [field]: value };
     setSpecs(updated);
+    onStateChange({
+      ...cyriState,
+      custom_specs: updated,
+      mode: "custom"
+    });
     onSpecsChange(updated);
   };
 
@@ -322,6 +554,11 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     };
     setSpecs(updated);
     setGpuInput(gpuName);
+    onStateChange({
+      ...cyriState,
+      custom_specs: updated,
+      mode: "custom"
+    });
     onSpecsChange(updated);
     setShowGpuSuggestions(false);
   };
@@ -335,6 +572,11 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     };
     setSpecs(updated);
     setCpuInput(updated.cpu);
+    onStateChange({
+      ...cyriState,
+      custom_specs: updated,
+      mode: "custom"
+    });
     onSpecsChange(updated);
     setShowCpuSuggestions(false);
   };
@@ -344,21 +586,45 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     const match = specs.cpu.match(/(\d+)\s*Cores/);
     const cores = match ? parseInt(match[1]) : 6;
     
+    // Parse target CPU tier from current spec string
+    const parsed = parseCpuSpecs(specs.cpu);
+    
     let nextCpu = "";
-    if (isAmd) {
-      if (cores >= 24) nextCpu = "Intel Core i9-14900K";
-      else if (cores >= 16) nextCpu = "Intel Core Ultra 9 185H";
-      else if (cores >= 12) nextCpu = "Intel Core i7-12700K";
-      else if (cores >= 8) nextCpu = "Intel Core i5-13400";
-      else if (cores >= 6) nextCpu = "Intel Core i5-12400";
-      else nextCpu = "Intel Core i3-12100F";
+    if (parsed.tier <= 2) {
+      // Legacy CPU swapping (keeps old gen authenticity!)
+      if (isAmd) {
+        if (cores <= 2) nextCpu = "Intel Core 2 Duo E8400";
+        else nextCpu = "Intel Core i3-2100";
+      } else {
+        if (cores <= 2) nextCpu = "AMD Athlon 64 X2 6000+";
+        else nextCpu = "AMD Athlon II X4 640";
+      }
+    } else if (parsed.tier <= 4) {
+      // Mid/Semi-legacy
+      if (isAmd) {
+        if (cores <= 4) nextCpu = "Intel Core i5-3470";
+        else nextCpu = "Intel Core i7-4790K";
+      } else {
+        if (cores <= 4) nextCpu = "AMD FX-4300";
+        else nextCpu = "AMD FX-8320";
+      }
     } else {
-      if (cores >= 24) nextCpu = "AMD Ryzen 9 7950X";
-      else if (cores >= 16) nextCpu = "AMD Ryzen 7 7800X3D";
-      else if (cores >= 12) nextCpu = "AMD Ryzen 9 5900X";
-      else if (cores >= 8) nextCpu = "AMD Ryzen 7 5800X";
-      else if (cores >= 6) nextCpu = "AMD Ryzen 5 5600X";
-      else nextCpu = "AMD Ryzen 3 3300X";
+      // Modern High Performance
+      if (isAmd) {
+        if (cores >= 24) nextCpu = "Intel Core i9-14900K";
+        else if (cores >= 16) nextCpu = "Intel Core Ultra 9 185H";
+        else if (cores >= 12) nextCpu = "Intel Core i7-12700K";
+        else if (cores >= 8) nextCpu = "Intel Core i5-13400";
+        else if (cores >= 6) nextCpu = "Intel Core i5-12400";
+        else nextCpu = "Intel Core i3-12100F";
+      } else {
+        if (cores >= 24) nextCpu = "AMD Ryzen 9 7950X";
+        else if (cores >= 16) nextCpu = "AMD Ryzen 7 7800X3D";
+        else if (cores >= 12) nextCpu = "AMD Ryzen 9 5900X";
+        else if (cores >= 8) nextCpu = "AMD Ryzen 7 5800X";
+        else if (cores >= 6) nextCpu = "AMD Ryzen 5 5600X";
+        else nextCpu = "AMD Ryzen 3 3300X";
+      }
     }
     
     const formattedCpu = `${nextCpu} (${cores} Cores)`;
@@ -371,16 +637,57 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
     onSpecsChange(updated);
   };
 
-  // Compute matches
-  const filteredGpus = gpuInput.trim() === ""
-    ? POPULAR_GPUS.slice(0, 10)
-    : POPULAR_GPUS.filter(g => g.name.toLowerCase().includes(gpuInput.toLowerCase())).slice(0, 10);
+  // Compute matches with smart multi-word search algorithm (multi-word keyword filtering)
+  const getFilteredGpus = () => {
+    if (gpuInput.trim() === "") {
+      return POPULAR_GPUS.slice(0, 10);
+    }
+    const searchLower = gpuInput.toLowerCase().replace(/[-]/g, " ");
+    const searchTerms = searchLower.split(/\s+/).filter(Boolean);
+    if (searchTerms.length === 0) {
+      return POPULAR_GPUS.slice(0, 10);
+    }
+    const matched = POPULAR_GPUS.filter(g => {
+      const gpuNameLower = g.name.toLowerCase().replace(/[-]/g, " ");
+      return searchTerms.every(term => gpuNameLower.includes(term));
+    });
+    return matched.slice(0, 50);
+  };
+
+  const filteredGpus = getFilteredGpus();
 
   // Clean CPU Input to strip " (X Cores)" tail formatting for search matching
   const cleanCpuSearch = cpuInput.replace(/\s*\(\d+\s*Cores\)/gi, "").trim();
-  const filteredCpus = cleanCpuSearch === ""
-    ? POPULAR_CPUS.slice(0, 10)
-    : POPULAR_CPUS.filter(c => c.name.toLowerCase().includes(cleanCpuSearch.toLowerCase())).slice(0, 10);
+  
+  const getFilteredCpus = () => {
+    if (cleanCpuSearch === "") {
+      return POPULAR_CPUS.slice(0, 10);
+    }
+    
+    // Normalize and clean terms (e.g. "i5 11 gen" or "i5 11th gen")
+    const searchLower = cleanCpuSearch.toLowerCase()
+      .replace(/generation/g, "")
+      .replace(/gen/g, "")
+      .replace(/th\b/g, "") // "11th" -> "11", "10th" -> "10"
+      .replace(/[-]/g, " ") // replace dash to treat word boundaries nicely
+      .trim();
+      
+    const searchTerms = searchLower.split(/\s+/).filter(Boolean);
+    if (searchTerms.length === 0) {
+      return POPULAR_CPUS.slice(0, 10);
+    }
+    
+    // Filter CPUs where ALL typed terms are matched in the CPU name.
+    // For example, if searching "i5 11", cpu must contain both "i5" and "11".
+    const matched = POPULAR_CPUS.filter(c => {
+      const cpuNameLower = c.name.toLowerCase().replace(/[-]/g, " ");
+      return searchTerms.every(term => cpuNameLower.includes(term));
+    });
+    
+    return matched.slice(0, 50);
+  };
+
+  const filteredCpus = getFilteredCpus();
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white shadow-xl" id="specs-panel">
@@ -396,44 +703,284 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
         </div>
         
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => setShowPsImporter(!showPsImporter)}
-            type="button"
-            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold font-mono transition duration-150 border cursor-pointer ${
-              showPsImporter 
-                ? "bg-indigo-500 text-slate-950 border-indigo-400 font-extrabold" 
-                : "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            1-Click PC Spec Importer
-          </button>
+          {cyriState.real_specs === null ? (
+            /* First-time: ONLY render the Full Scan CTA button */
+            <button
+              onClick={handleDownloadScanner}
+              type="button"
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-500/20 hover:bg-indigo-500 text-indigo-400 hover:text-slate-950 text-xs font-black uppercase tracking-wider transition duration-150 border border-indigo-500/30 hover:border-indigo-400 shadow-lg cursor-pointer animate-pulse shrink-0"
+            >
+              <Terminal className="w-4 h-4" />
+              Can You Run It (Full Scan)
+            </button>
+          ) : (
+            /* Scanned: Detect Again + Edit appear */
+            <>
+              {cyriState.mode === "custom" && (
+                <button
+                  onClick={handleDetectAgain}
+                  type="button"
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-extrabold font-mono transition text-slate-200 hover:text-white border border-slate-700 cursor-pointer shadow-md"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Detect Again (Restore Scan)
+                </button>
+              )}
 
+              <button
+                onClick={() => {
+                  if (isEditing) {
+                    handleDoneCustomizing();
+                  }
+                  setIsEditing(!isEditing);
+                }}
+                type="button"
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold font-mono transition duration-150 border cursor-pointer ${
+                  isEditing 
+                    ? "bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold" 
+                    : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                }`}
+              >
+                {isEditing ? <Check className="w-3.5 h-3.5" /> : <Edit2 className="w-3.5 h-3.5" />}
+                {isEditing ? "Apply Custom Specs" : "Edit Custom Specs"}
+              </button>
+
+              <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5 rounded-xl text-[10px] text-emerald-400 font-black uppercase tracking-widest font-mono">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Verified Specs Active
+              </div>
+            </>
+          )}
+
+          {/* Database management toggle always accessible for config tracking */}
           <button
-            onClick={handleRedetect}
+            onClick={() => {
+              setShowDbSync(!showDbSync);
+              setShowPsImporter(false);
+            }}
             type="button"
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-bold font-mono transition text-slate-300 hover:text-white cursor-pointer"
+            className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-bold font-mono transition duration-150 border cursor-pointer ${
+              showDbSync 
+                ? "bg-slate-755 text-white border-slate-650" 
+                : "bg-slate-950/20 hover:bg-slate-850 text-slate-400 border-slate-800"
+            }`}
+            title="Database Sync Settings"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Auto-Detect Specs
+            <Cpu className="w-3 h-3 text-slate-500" />
+            HW DB
           </button>
         </div>
       </div>
 
+      {/* Hardware Database Sync Importer Panel (DATA UPDATE SYSTEM) */}
+      {showDbSync && (
+        <div className="mb-6 p-5 rounded-2xl bg-emerald-950/10 border border-emerald-500/20 shadow-inner space-y-4 animate-in fade-in slide-in-from-top-4 duration-250">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-emerald-400" />
+              <div>
+                <h3 className="text-sm font-bold text-white">Periodic/Manual Database Synchronization</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-mono">Database contains <b>{POPULAR_GPUS.length} GPUs</b> and <b>{POPULAR_CPUS.length} CPUs</b></p>
+              </div>
+            </div>
+            <button
+              onClick={loadDefaultToForm}
+              type="button"
+              className="px-3.5 py-2 bg-emerald-505 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition duration-150 shadow shadow-emerald-500/10 cursor-pointer"
+            >
+              Load Live Hardware JSON to Edit
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed font-sans max-w-2xl">
+            Need to update cards or import custom configurations? Paste a fresh, compliant JSON array matching the structure of <code className="text-emerald-400 text-[10px]">HardwareMetadata[]</code> to manually override and reload live databases.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <span className="block text-[10px] text-slate-450 font-mono tracking-wider uppercase">GPU Database Override JSON (Array)</span>
+              <textarea
+                className="w-full h-48 bg-slate-950/80 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3 text-[10px] text-emerald-200 font-mono focus:outline-none placeholder-slate-600 shadow-inner"
+                placeholder='[\n  { "name": "NVIDIA GeForce RTX 6090", "vram": "48 GB", "directx": "DirectX 12 (Ultimate)", "tier": 10 }\n]'
+                value={gpuJsonPaste}
+                onChange={(e) => {
+                  setGpuJsonPaste(e.target.value);
+                  setDbSyncError("");
+                }}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <span className="block text-[10px] text-slate-450 font-mono tracking-wider uppercase">CPU Database Override JSON (Array)</span>
+              <textarea
+                className="w-full h-48 bg-slate-950/80 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3 text-[10px] text-emerald-200 font-mono focus:outline-none placeholder-slate-600 shadow-inner"
+                placeholder='[\n  { "name": "Intel Core Ultra 9 385K", "cores": 28, "tier": 10 }\n]'
+                value={cpuJsonPaste}
+                onChange={(e) => {
+                  setCpuJsonPaste(e.target.value);
+                  setDbSyncError("");
+                }}
+              />
+            </div>
+          </div>
+
+          {dbSyncError && (
+            <p className="text-[11px] text-rose-400 font-semibold font-mono bg-rose-500/5 p-3 rounded-xl border border-rose-500/10">{dbSyncError}</p>
+          )}
+
+          {dbSyncFeedback && (
+            <p className="text-[11px] text-emerald-400 font-semibold font-mono bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10">{dbSyncFeedback}</p>
+          )}
+
+          <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-800/55">
+            <button
+              type="button"
+              onClick={handleResetDatabase}
+              className="px-4 py-2 border border-rose-500/30 hover:border-rose-500/50 text-[11px] font-bold text-rose-400 hover:text-white hover:bg-rose-500/5 rounded-xl transition duration-150 cursor-pointer"
+            >
+              Clear Overrides (Reset to built-in)
+            </button>
+            
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setGpuJsonPaste("");
+                  setCpuJsonPaste("");
+                  setShowDbSync(false);
+                }}
+                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-xs font-bold text-slate-400 hover:text-white rounded-xl transition duration-150 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDatabaseSync}
+                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 rounded-xl transition duration-150 shadow-md shadow-emerald-500/10 cursor-pointer"
+              >
+                Apply Live Sync Updates
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* First-Time Scan Recommendation Banner */}
+      {cyriState.real_specs === null && (
+        <div className="mb-6 p-6 rounded-3xl bg-indigo-950/20 border border-indigo-500/20 shadow-xl space-y-4 animate-in fade-in duration-300">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-start gap-4 text-left">
+              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center shrink-0 border border-indigo-500/25">
+                <Terminal className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-extrabold text-white flex flex-wrap items-center gap-2">
+                  <span>🚀 Can You Run It (Full Hardware Scan)</span>
+                  <span className="text-[10px] bg-indigo-500/10 text-indigo-300 font-mono px-2.5 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-wider">High Fidelity Estimations</span>
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+                  We are currently utilizing temporary estimated browser-guessed components. Run our clean, secure, local hardware scan to verify accurate compatibility and framerates.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 text-[10px] text-slate-400 font-mono pt-1">
+                  <span className="flex items-center gap-1 text-slate-300">✅ 100% Anti-virus Verified</span>
+                  <span className="flex items-center gap-1 text-slate-300">⏱️ Process takes 2 seconds</span>
+                  <span className="flex items-center gap-1 text-slate-300">🔒 Safe local read (completely anonymous)</span>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleDownloadScanner}
+              type="button"
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-black text-xs uppercase tracking-wider transition duration-150 shadow-lg shadow-indigo-500/20 shrink-0 cursor-pointer hover:scale-[1.02] transform"
+            >
+              <Terminal className="w-4 h-4" />
+              Can You Run It (Full Scan)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* PowerShell Spec Importer Tooltip Panel */}
       {showPsImporter && (
         <div className="mb-6 p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 shadow-inner space-y-4 animate-in fade-in slide-in-from-top-4 duration-250">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-sm font-bold text-white">Import Your Real Laptop/PC Specs via PowerShell</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-5 h-5 text-indigo-400" />
+              <h3 className="text-sm font-bold text-white">Import Your Real Laptop/PC Specs</h3>
+            </div>
+            
+            {/* Platform Selector Segment */}
+            <div className="flex bg-slate-900 border border-slate-800 p-0.5 rounded-xl self-start w-fit">
+              <button
+                type="button"
+                onClick={() => setImporterPlatform("windows")}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${importerPlatform === "windows" ? "bg-indigo-500 text-slate-950 font-extrabold" : "text-slate-400 hover:text-white"}`}
+              >
+                Windows
+              </button>
+              <button
+                type="button"
+                onClick={() => setImporterPlatform("macos")}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${importerPlatform === "macos" ? "bg-indigo-500 text-slate-950 font-extrabold" : "text-slate-400 hover:text-white"}`}
+              >
+                macOS
+              </button>
+              <button
+                type="button"
+                onClick={() => setImporterPlatform("linux")}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${importerPlatform === "linux" ? "bg-indigo-500 text-slate-950 font-extrabold" : "text-slate-400 hover:text-white"}`}
+              >
+                Linux
+              </button>
+            </div>
           </div>
+          
           <p className="text-xs text-slate-300 leading-relaxed font-sans max-w-2xl">
-            Because web browsers block websites from accessing exact CPU and Drive names due to user privacy, our safe 1-click command fetches them from Windows and transfers them here instantly!
+            Because web browsers block websites from accessing exact CPU and Drive names due to user privacy, our safe 1-click command fetches them from your {importerPlatform === "windows" ? "Windows system" : importerPlatform === "macos" ? "Mac device" : "Linux machine"} and transfers them here instantly!
           </p>
+          
+          {/* Download Buttons Section specifically for Windows */}
+          {importerPlatform === "windows" && (
+            <div className="bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/15 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-150">
+              <div className="space-y-1">
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-300 font-mono px-2 py-0.5 rounded border border-indigo-500/20 font-black uppercase">Option A (Easiest - Double Click Run)</span>
+                <h4 className="text-xs font-extrabold text-white">Download Automated Windows Scanner (.bat)</h4>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Saves manual command typing. Just double-click to run! It automatically copies specifications directly to your clipboard.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => downloadFile("cyri-scanner.bat")}
+                  className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition duration-150 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  Download .bat Scanner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadFile("cyri-scanner.ps1")}
+                  className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl border border-slate-705 transition duration-150 cursor-pointer"
+                >
+                  PowerShell (.ps1)
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">Step 1: Copy this safe PowerShell command</span>
+            <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">
+              {importerPlatform === "windows" ? "Option B: Manually Copy And Run Command" : "Step 1: Copy this safe command"}
+            </span>
             <div className="flex items-center gap-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-              <code className="text-[10px] text-indigo-300 font-mono select-all truncate flex-1">{psCommand}</code>
+              <code className="text-[10px] text-indigo-300 font-mono select-all truncate flex-1">
+                {importerPlatform === "windows" ? windowsCommand : importerPlatform === "macos" ? macosCommand : linuxCommand}
+              </code>
               <button
                 type="button"
                 onClick={copyPsCommand}
@@ -445,10 +992,12 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
             </div>
           </div>
           <div className="space-y-2">
-            <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">Step 2: Open PowerShell, paste the command, press Enter, then paste the output here</span>
+            <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">
+              {importerPlatform === "windows" ? "Step 2: Paste the output / auto-copied string here" : "Step 2: Execute command in your Terminal, then paste the output here"}
+            </span>
             <textarea
               className="w-full h-24 bg-slate-950/80 border border-slate-800 focus:border-indigo-500/50 rounded-xl p-3 text-[10px] text-indigo-200 font-mono focus:outline-none placeholder-slate-600 shadow-inner"
-              placeholder="Right-click in PowerShell to paste, press Enter, copy the 'CYRI_SPECS: ...' line or paste the complete output here..."
+              placeholder={importerPlatform === "windows" ? "Right-click in PowerShell to paste, press Enter, copy the 'CYRI_SPECS: ...' line or paste output..." : "Paste the 'CYRI_SPECS: ...' terminal line here..."}
               value={psPasteText}
               onChange={(e) => {
                 setPsPasteText(e.target.value);
@@ -748,10 +1297,21 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
             ) : (
               <div>
                 <p className="text-sm font-semibold text-slate-200 font-mono break-words">{specs.cpu}</p>
+                
+                {/* Browser security helper guidance note */}
+                <div className="mt-2 text-[10px] text-slate-400 bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-xl space-y-1">
+                  <p className="font-sans leading-relaxed">
+                    <span className="text-emerald-400 font-bold">🔒 Secure Browser Active</span>: Web browsers hide exact hardware names to prevent tracking. We benchmarked your engine to find this best-fit CPU guess.
+                  </p>
+                  <p className="font-sans text-slate-500 text-[9px] leading-relaxed">
+                    For <span className="text-indigo-400 font-bold">100% exact auto-detection</span> of your real PC processor model, use our <span className="text-indigo-400 font-bold">1-Click PC Spec Importer</span> at the top.
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   onClick={swapCpuBrand}
-                  className="mt-1.5 text-[9px] text-sky-400 hover:text-sky-300 font-bold font-mono tracking-tight uppercase flex items-center gap-1.5 transition-all hover:brightness-110 cursor-pointer"
+                  className="mt-2 text-[9px] text-sky-400 hover:text-sky-300 font-bold font-mono tracking-tight uppercase flex items-center gap-1.5 transition-all hover:brightness-110 cursor-pointer"
                 >
                   <RefreshCw className="w-2.5 h-2.5 " />
                   Swap to {specs.cpu.includes("AMD") || specs.cpu.includes("Ryzen") ? "Intel Equivalent" : "Ryzen Equivalent"}
@@ -761,8 +1321,8 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
           </div>
 
           <div className="mt-3.5 pt-2.5 border-t border-slate-800/60 text-[10px] text-slate-400 font-mono space-y-1">
-            <div className="flex justify-between">Architecture: <span className="text-slate-200 font-bold">{specs.cpu.includes("AMD") ? "x86-64 AMD Zen" : specs.cpu.includes("Apple") ? "ARM Unified Silicon" : "x86-64 Intel Core"}</span></div>
-            <div className="flex justify-between">Cores Check: <span className="text-slate-200 font-bold">{specs.cpu.includes("Core") ? "Hyperthreaded Pass" : "Multi-threaded Match"}</span></div>
+            <div className="flex justify-between">Architecture: <span className="text-slate-200 font-bold">{(specs.cpu.includes("AMD") || specs.cpu.includes("Ryzen")) ? "x86-64 AMD Zen" : (specs.cpu.includes("Apple") || specs.cpu.includes("M1") || specs.cpu.includes("M2") || specs.cpu.includes("M3") || specs.cpu.includes("M4")) ? "ARM Unified Silicon" : "x86-64 Intel Core"}</span></div>
+            <div className="flex justify-between">Cores Check: <span className="text-slate-200 font-bold">{(specs.cpu.includes("Cores") || specs.cpu.includes("Core") || specs.cpu.includes("core")) ? "Dynamic Cores Verified" : "Standard Multi-threaded Match"}</span></div>
           </div>
         </div>
 
@@ -905,7 +1465,12 @@ export default function SpecsForm({ currentSpecs, onSpecsChange }: SpecsFormProp
 
       <div className="mt-5 flex justify-end">
         <button
-          onClick={() => setIsEditing(!isEditing)}
+          onClick={() => {
+            if (isEditing) {
+              handleDoneCustomizing();
+            }
+            setIsEditing(!isEditing);
+          }}
           type="button"
           className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold tracking-tight transition duration-150 shadow-lg cursor-pointer ${
             isEditing

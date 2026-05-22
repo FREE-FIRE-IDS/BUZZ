@@ -10,6 +10,8 @@ export interface HardwareMetadata {
   cores?: number;     // Exclusively for CPUs
   tier: number;       // Compatibility rank (1-10, higher is better)
   isIntegrated?: boolean; // For GPUs: indicates if integrated graphics
+  benchmarkScore?: number; // Exclusively for GPUs
+  architecture?: string;   // Exclusively for GPUs
 }
 
 export const POPULAR_GPUS: HardwareMetadata[] = [
@@ -220,21 +222,35 @@ export const POPULAR_GPUS: HardwareMetadata[] = [
 ];
 
 export const POPULAR_CPUS: HardwareMetadata[] = [
-  // Intel Core Ultra (Next-Gen Series 2 & 1)
+  // Intel Core Ultra (Next-Gen Series 2 & 1 - Gen 15)
+  { name: "Intel Core Ultra 9 288V", cores: 8, tier: 9 },
   { name: "Intel Core Ultra 9 285K", cores: 24, tier: 10 },
+  { name: "Intel Core Ultra 9 285", cores: 24, tier: 10 },
+  { name: "Intel Core Ultra 7 268V", cores: 8, tier: 9 },
+  { name: "Intel Core Ultra 7 258V", cores: 8, tier: 9 },
   { name: "Intel Core Ultra 7 265K", cores: 20, tier: 9 },
+  { name: "Intel Core Ultra 7 265", cores: 20, tier: 9 },
+  { name: "Intel Core Ultra 5 226V", cores: 8, tier: 8 },
   { name: "Intel Core Ultra 5 245K", cores: 14, tier: 8 },
+  { name: "Intel Core Ultra 5 245", cores: 14, tier: 8 },
   { name: "Intel Core Ultra 9 185H", cores: 16, tier: 8 },
+  { name: "Intel Core Ultra 7 165H", cores: 16, tier: 8 },
   { name: "Intel Core Ultra 7 155H", cores: 16, tier: 8 },
+  { name: "Intel Core Ultra 7 155U", cores: 12, tier: 7 },
   { name: "Intel Core Ultra 5 125H", cores: 14, tier: 7 },
+  { name: "Intel Core Ultra 5 125U", cores: 12, tier: 6 },
 
   // Intel Core Gen 14 (Raptor Lake Refresh)
   { name: "Intel Core i9-14900KS", cores: 24, tier: 10 },
   { name: "Intel Core i9-14900K", cores: 24, tier: 10 },
   { name: "Intel Core i9-14900F", cores: 24, tier: 10 },
+  { name: "Intel Core i9-14900", cores: 24, tier: 10 },
   { name: "Intel Core i7-14700K", cores: 20, tier: 9 },
   { name: "Intel Core i7-14700F", cores: 20, tier: 9 },
+  { name: "Intel Core i7-14700", cores: 20, tier: 9 },
   { name: "Intel Core i5-14600K", cores: 14, tier: 8 },
+  { name: "Intel Core i5-14600", cores: 14, tier: 8 },
+  { name: "Intel Core i5-14500", cores: 14, tier: 8 },
   { name: "Intel Core i5-14400F", cores: 10, tier: 7 },
   { name: "Intel Core i5-14400", cores: 10, tier: 7 },
   { name: "Intel Core i3-14100F", cores: 4, tier: 5 },
@@ -245,9 +261,12 @@ export const POPULAR_CPUS: HardwareMetadata[] = [
   { name: "Intel Core i9-13900KS", cores: 24, tier: 10 },
   { name: "Intel Core i9-13900K", cores: 24, tier: 10 },
   { name: "Intel Core i9-13900F", cores: 24, tier: 10 },
+  { name: "Intel Core i9-13900", cores: 24, tier: 10 },
   { name: "Intel Core i7-13700K", cores: 16, tier: 9 },
   { name: "Intel Core i7-13700F", cores: 16, tier: 9 },
+  { name: "Intel Core i7-13700", cores: 16, tier: 9 },
   { name: "Intel Core i5-13600K", cores: 14, tier: 8 },
+  { name: "Intel Core i5-13600", cores: 14, tier: 8 },
   { name: "Intel Core i5-13500", cores: 14, tier: 7 },
   { name: "Intel Core i5-13400F", cores: 10, tier: 7 },
   { name: "Intel Core i5-13400", cores: 10, tier: 7 },
@@ -258,19 +277,164 @@ export const POPULAR_CPUS: HardwareMetadata[] = [
   { name: "Intel Core i9-12900KS", cores: 16, tier: 9 },
   { name: "Intel Core i9-12900K", cores: 16, tier: 9 },
   { name: "Intel Core i9-12900F", cores: 16, tier: 9 },
+  { name: "Intel Core i9-12900", cores: 16, tier: 9 },
   { name: "Intel Core i7-12750K", cores: 12, tier: 8 },
   { name: "Intel Core i7-12700K", cores: 12, tier: 8 },
   { name: "Intel Core i7-12700F", cores: 12, tier: 8 },
+  { name: "Intel Core i7-12700", cores: 12, tier: 8 },
   { name: "Intel Core i5-12600K", cores: 10, tier: 7 },
+  { name: "Intel Core i5-12600", cores: 10, tier: 7 },
   { name: "Intel Core i5-12500", cores: 6, tier: 6 },
   { name: "Intel Core i5-12400F", cores: 6, tier: 6 },
   { name: "Intel Core i5-12400", cores: 6, tier: 6 },
+  { name: "Intel Core i3-12300", cores: 4, tier: 5 },
   { name: "Intel Core i3-12100F", cores: 4, tier: 5 },
   { name: "Intel Core i3-12100", cores: 4, tier: 5 },
+
+  // Intel Core Gen 11 (Rocket Lake & Tiger Lake Mobile)
+  { name: "Intel Core i9-11980HK", cores: 8, tier: 8 },
+  { name: "Intel Core i9-11950H", cores: 8, tier: 8 },
+  { name: "Intel Core i9-11900K", cores: 8, tier: 8 },
+  { name: "Intel Core i9-11900F", cores: 8, tier: 8 },
+  { name: "Intel Core i9-11900", cores: 8, tier: 8 },
+  { name: "Intel Core i7-11800H", cores: 8, tier: 7 },
+  { name: "Intel Core i7-11700K", cores: 8, tier: 7 },
+  { name: "Intel Core i7-11700F", cores: 8, tier: 7 },
+  { name: "Intel Core i7-11700", cores: 8, tier: 7 },
+  { name: "Intel Core i7-1185G7", cores: 4, tier: 6 },
+  { name: "Intel Core i7-1165G7", cores: 4, tier: 6 },
+  { name: "Intel Core i5-11600K", cores: 6, tier: 6 },
+  { name: "Intel Core i5-11500", cores: 6, tier: 6 },
+  { name: "Intel Core i5-11400H", cores: 6, tier: 6 },
+  { name: "Intel Core i5-11400F", cores: 6, tier: 6 },
+  { name: "Intel Core i5-11400", cores: 6, tier: 6 },
+  { name: "Intel Core i5-1145G7", cores: 4, tier: 5 },
+  { name: "Intel Core i5-1135G7", cores: 4, tier: 5 },
+  { name: "Intel Core i5-11300H", cores: 4, tier: 5 },
+  { name: "Intel Core i3-11300", cores: 4, tier: 4 },
+  { name: "Intel Core i3-1125G4", cores: 4, tier: 4 },
+  { name: "Intel Core i3-11100", cores: 4, tier: 4 },
+  { name: "Intel Core i3-1115G4", cores: 2, tier: 3 },
+
+  // Intel Core Gen 10 (Comet Lake)
+  { name: "Intel Core i9-10900K", cores: 10, tier: 7 },
+  { name: "Intel Core i9-10900F", cores: 10, tier: 7 },
+  { name: "Intel Core i9-10900", cores: 10, tier: 7 },
+  { name: "Intel Core i7-10700K", cores: 8, tier: 7 },
+  { name: "Intel Core i7-10700F", cores: 8, tier: 7 },
+  { name: "Intel Core i7-10700", cores: 8, tier: 7 },
+  { name: "Intel Core i5-10600K", cores: 6, tier: 6 },
+  { name: "Intel Core i5-10500", cores: 6, tier: 5 },
+  { name: "Intel Core i5-10450", cores: 6, tier: 5 },
+  { name: "Intel Core i5-10400F", cores: 6, tier: 5 },
+  { name: "Intel Core i5-10400", cores: 6, tier: 5 },
+  { name: "Intel Core i3-10320", cores: 4, tier: 4 },
+  { name: "Intel Core i3-10300", cores: 4, tier: 4 },
+  { name: "Intel Core i3-10100F", cores: 4, tier: 4 },
+  { name: "Intel Core i3-10100", cores: 4, tier: 4 },
+
+  // Intel Core Gen 9 (Coffee Lake Refresh)
+  { name: "Intel Core i9-9900KS", cores: 8, tier: 7 },
+  { name: "Intel Core i9-9900K", cores: 8, tier: 7 },
+  { name: "Intel Core i9-9900", cores: 8, tier: 7 },
+  { name: "Intel Core i7-9700K", cores: 8, tier: 6 },
+  { name: "Intel Core i7-9700F", cores: 8, tier: 6 },
+  { name: "Intel Core i7-9700", cores: 8, tier: 6 },
+  { name: "Intel Core i5-9600K", cores: 6, tier: 5 },
+  { name: "Intel Core i5-9600", cores: 6, tier: 5 },
+  { name: "Intel Core i5-9500", cores: 6, tier: 4 },
+  { name: "Intel Core i5-9400F", cores: 6, tier: 4 },
+  { name: "Intel Core i5-9400", cores: 6, tier: 4 },
+  { name: "Intel Core i3-9350KF", cores: 4, tier: 3 },
+  { name: "Intel Core i3-9300", cores: 4, tier: 3 },
+  { name: "Intel Core i3-9100F", cores: 4, tier: 3 },
+  { name: "Intel Core i3-9100", cores: 4, tier: 3 },
+
+  // Intel Core Gen 8 (Coffee Lake)
+  { name: "Intel Core i7-8700K", cores: 6, tier: 5 },
+  { name: "Intel Core i7-8700", cores: 6, tier: 5 },
+  { name: "Intel Core i5-8600K", cores: 6, tier: 4 },
+  { name: "Intel Core i5-8600", cores: 6, tier: 4 },
+  { name: "Intel Core i5-8500", cores: 6, tier: 4 },
+  { name: "Intel Core i5-8400", cores: 6, tier: 4 },
+  { name: "Intel Core i3-8350K", cores: 4, tier: 3 },
+  { name: "Intel Core i3-8300", cores: 4, tier: 3 },
+  { name: "Intel Core i3-8100", cores: 4, tier: 3 },
+
+  // Intel Core Gen 7 & Gen 6 (Kaby Lake & Skylake)
+  { name: "Intel Core i7-7700K", cores: 4, tier: 4 },
+  { name: "Intel Core i7-7700", cores: 4, tier: 4 },
+  { name: "Intel Core i5-7600K", cores: 4, tier: 3 },
+  { name: "Intel Core i5-7600", cores: 4, tier: 3 },
+  { name: "Intel Core i5-7500", cores: 4, tier: 3 },
+  { name: "Intel Core i5-7400", cores: 4, tier: 3 },
+  { name: "Intel Core i3-7300", cores: 2, tier: 2 },
+  { name: "Intel Core i3-7100", cores: 2, tier: 2 },
+  { name: "Intel Core i7-6700K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-6700", cores: 4, tier: 3 },
+  { name: "Intel Core i5-6600K", cores: 4, tier: 3 },
+  { name: "Intel Core i5-6600", cores: 4, tier: 3 },
+  { name: "Intel Core i5-6500", cores: 4, tier: 3 },
+  { name: "Intel Core i5-6400", cores: 4, tier: 2 },
+  { name: "Intel Core i3-6300", cores: 2, tier: 2 },
+  { name: "Intel Core i3-6100", cores: 2, tier: 2 },
+
+  // Intel Core Gen 4 & Gen 5 (Haswell & Broadwell)
+  { name: "Intel Core i7-5775C", cores: 4, tier: 3 },
+  { name: "Intel Core i5-5675C", cores: 4, tier: 2 },
+  { name: "Intel Core i3-5005U", cores: 2, tier: 1 },
+  { name: "Intel Core i7-4790K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-4790", cores: 4, tier: 3 },
+  { name: "Intel Core i7-4770K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-4770", cores: 4, tier: 3 },
+  { name: "Intel Core i5-4690K", cores: 4, tier: 2 },
+  { name: "Intel Core i5-4690", cores: 4, tier: 2 },
+  { name: "Intel Core i5-4590", cores: 4, tier: 2 },
+  { name: "Intel Core i5-4460", cores: 4, tier: 2 },
+  { name: "Intel Core i3-4330", cores: 2, tier: 2 },
+  { name: "Intel Core i3-4170", cores: 2, tier: 2 },
+  { name: "Intel Core i3-4160", cores: 2, tier: 2 },
+  { name: "Intel Core i3-4150", cores: 2, tier: 2 },
+  { name: "Intel Core i3-4130", cores: 2, tier: 2 },
+
+  // Intel Core Gen 2 & Gen 3 (Sandy Bridge & Ivy Bridge)
+  { name: "Intel Core i7-3770K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-3770", cores: 4, tier: 3 },
+  { name: "Intel Core i5-3570K", cores: 4, tier: 2 },
+  { name: "Intel Core i5-3570", cores: 4, tier: 2 },
+  { name: "Intel Core i5-3470", cores: 4, tier: 2 },
+  { name: "Intel Core i5-3330", cores: 4, tier: 2 },
+  { name: "Intel Core i3-3250", cores: 2, tier: 1 },
+  { name: "Intel Core i3-3240", cores: 2, tier: 1 },
+  { name: "Intel Core i3-3220", cores: 2, tier: 1 },
+  { name: "Intel Core i7-2700K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-2600K", cores: 4, tier: 3 },
+  { name: "Intel Core i7-2600", cores: 4, tier: 3 },
+  { name: "Intel Core i5-2500K", cores: 4, tier: 2 },
+  { name: "Intel Core i5-2500", cores: 4, tier: 2 },
+  { name: "Intel Core i5-2400", cores: 4, tier: 2 },
+  { name: "Intel Core i5-2300", cores: 4, tier: 1 },
+  { name: "Intel Core i3-2130", cores: 2, tier: 1 },
+  { name: "Intel Core i3-2120", cores: 2, tier: 1 },
+  { name: "Intel Core i3-2100", cores: 2, tier: 1 },
+
+  // Intel Core Gen 1 (Nehalem) & Extreme & Core 2 era
+  { name: "Intel Core i7-920", cores: 4, tier: 1 },
+  { name: "Intel Core i7-860", cores: 4, tier: 1 },
+  { name: "Intel Core i5-750", cores: 4, tier: 1 },
+  { name: "Intel Core i3-530", cores: 2, tier: 1 },
+  { name: "Intel Core 2 Quad Q9650", cores: 4, tier: 1 },
+  { name: "Intel Core 2 Quad Q6600", cores: 4, tier: 1 },
+  { name: "Intel Core 2 Duo E8400", cores: 2, tier: 1 },
+  { name: "Intel Core 2 Duo E6600", cores: 2, tier: 1 },
+  { name: "Intel Pentium G4560", cores: 2, tier: 1 },
+  { name: "Intel Pentium G3258", cores: 2, tier: 1 },
+  { name: "Intel Pentium 4 3.06GHz", cores: 1, tier: 1 },
 
   // AMD Ryzen 9000 Series (Zen 5)
   { name: "AMD Ryzen 9 9950X", cores: 16, tier: 10 },
   { name: "AMD Ryzen 9 9900X", cores: 12, tier: 10 },
+  { name: "AMD Ryzen 7 9800X3D", cores: 8, tier: 10 },
   { name: "AMD Ryzen 7 9700X", cores: 8, tier: 9 },
   { name: "AMD Ryzen 5 9605X", cores: 6, tier: 8 },
   { name: "AMD Ryzen 5 9600X", cores: 6, tier: 8 },
@@ -297,6 +461,7 @@ export const POPULAR_CPUS: HardwareMetadata[] = [
   { name: "AMD Ryzen 9 5900X", cores: 12, tier: 9 },
   { name: "AMD Ryzen 7 5800X3D", cores: 8, tier: 9 },
   { name: "AMD Ryzen 7 5800X", cores: 8, tier: 8 },
+  { name: "AMD Ryzen 7 5700X3D", cores: 8, tier: 8 },
   { name: "AMD Ryzen 7 5700X", cores: 8, tier: 8 },
   { name: "AMD Ryzen 7 5700G", cores: 8, tier: 7 },
   { name: "AMD Ryzen 5 5600X", cores: 6, tier: 7 },
@@ -349,6 +514,10 @@ export const POPULAR_CPUS: HardwareMetadata[] = [
   { name: "AMD Athlon 64 3000+", cores: 1, tier: 1 },
 
   // Apple Processors (ARM Unified Silicon)
+  { name: "Apple M4 Ultra", cores: 32, tier: 10 },
+  { name: "Apple M4 Max", cores: 16, tier: 10 },
+  { name: "Apple M4 Pro", cores: 14, tier: 9 },
+  { name: "Apple M4", cores: 10, tier: 8 },
   { name: "Apple M3 Max", cores: 16, tier: 10 },
   { name: "Apple M3 Pro", cores: 11, tier: 8 },
   { name: "Apple M3", cores: 8, tier: 7 },
@@ -400,3 +569,37 @@ export const DIRECTX_OPTIONS = [
   "DirectX 11 (Legacy)",
   "DirectX 10 or older"
 ];
+
+// Mutate databases in-place at runtime if cached overrides are found in localStorage (Data Update System)
+if (typeof window !== "undefined") {
+  try {
+    const cachedGpus = localStorage.getItem("cyri_gpu_db_override");
+    if (cachedGpus) {
+      const parsed = JSON.parse(cachedGpus);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Mutate array in-place to update all importing components
+        POPULAR_GPUS.length = 0;
+        POPULAR_GPUS.push(...parsed);
+        console.log("PC Specs Database: Successfully synced and loaded GPU database overrides.");
+      }
+    }
+  } catch (err) {
+    console.error("PC Specs Database: Failed to synchronize GPU database overrides", err);
+  }
+
+  try {
+    const cachedCpus = localStorage.getItem("cyri_cpu_db_override");
+    if (cachedCpus) {
+      const parsed = JSON.parse(cachedCpus);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Mutate array in-place to update all importing components
+        POPULAR_CPUS.length = 0;
+        POPULAR_CPUS.push(...parsed);
+        console.log("PC Specs Database: Successfully synced and loaded CPU database overrides.");
+      }
+    }
+  } catch (err) {
+    console.error("PC Specs Database: Failed to synchronize CPU database overrides", err);
+  }
+}
+

@@ -111,3 +111,10 @@ export interface SearchResponse {
   results: Game[];
   count: number;
 }
+
+export interface CyriState {
+  real_specs: UserSpecs | null;
+  custom_specs: UserSpecs | null;
+  mode: "real" | "custom";
+}
+

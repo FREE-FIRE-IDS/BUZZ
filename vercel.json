@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/api/games/([^/]+)/screenshots",
+      "dest": "/api/games-screenshots.js?id=$1"
+    },
+    {
+      "src": "/api/games/([^/]+)",
+      "dest": "/api/game-details.js?id=$1"
+    },
+    {
+      "src": "/api/games",
+      "dest": "/api/games-list.js"
+    },
+    {
+      "src": "/api/check-requirements",
+      "dest": "/api/check-requirements.js"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

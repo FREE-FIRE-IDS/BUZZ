@@ -11,7 +11,7 @@
 import React, { useState } from "react";
 import { Gauge, CheckCircle2, AlertTriangle, Flame, Shield, PlayCircle, Zap } from "lucide-react";
 import { Game, UserSpecs } from "../types";
-import { checkGameCompatibility, GameCompatibility } from "../utils";
+import { checkGameCompatibility, GameCompatibility, parseCpuSpecs, parseGpuSpecs } from "../utils";
 import { POPULAR_GPUS } from "../hardwareData";
 
 interface FpsPredictorProps {
@@ -31,39 +31,21 @@ export default function FpsPredictor({ game, userSpecs }: FpsPredictorProps) {
   };
 
   const getHardwareTierScore = () => {
-    const gpuName = (userSpecs.gpu || "").toLowerCase();
-    const cpuName = (userSpecs.cpu || "").toLowerCase();
+    // Rely on elite deep specs parsers! Supports ALL CPUs / GPUs from CPUBenchmark list!
+    const parsedGpu = parseGpuSpecs(userSpecs.gpu || "");
+    const parsedCpu = parseCpuSpecs(userSpecs.cpu || "");
     
-    // 1. Search DB to grab its premium tier rank (1-10)
-    let gpuTier = 5; // default fallback
-    const matchedGpu = POPULAR_GPUS.find(g => gpuName.includes(g.name.toLowerCase()) || g.name.toLowerCase().includes(gpuName));
-    if (matchedGpu) {
-      gpuTier = matchedGpu.tier;
-    } else {
-      // Model matching
-      if (gpuName.includes("4090") || gpuName.includes("5090")) gpuTier = 10;
-      else if (gpuName.includes("4080") || gpuName.includes("7900") || gpuName.includes("7950")) gpuTier = 9;
-      else if (gpuName.includes("4070") || gpuName.includes("3090") || gpuName.includes("3085") || gpuName.includes("3080") || gpuName.includes("7800")) gpuTier = 8;
-      else if (gpuName.includes("3070") || gpuName.includes("4060") || gpuName.includes("6800") || gpuName.includes("6700") || gpuName.includes("7700")) gpuTier = 7;
-      else if (gpuName.includes("3060") || gpuName.includes("2080") || gpuName.includes("6600") || gpuName.includes("6650") || gpuName.includes("a770")) gpuTier = 6;
-      else if (gpuName.includes("2060") || gpuName.includes("3050") || gpuName.includes("1080") || gpuName.includes("5700") || gpuName.includes("a580")) gpuTier = 5;
-      else if (gpuName.includes("1660") || gpuName.includes("1070") || gpuName.includes("5600") || gpuName.includes("590") || gpuName.includes("580") || gpuName.includes("a380")) gpuTier = 4;
-      else if (gpuName.includes("1060") || gpuName.includes("1650") || gpuName.includes("5500") || gpuName.includes("570") || gpuName.includes("480")) gpuTier = 3;
-      else if (gpuName.includes("1050") || gpuName.includes("560") || gpuName.includes("460") || gpuName.includes("960") || gpuName.includes("950") || gpuName.includes("750")) gpuTier = 2;
-      else if (gpuName.includes("intel") || gpuName.includes("uhd") || gpuName.includes("hd ") || gpuName.includes("iris") || gpuName.includes("gt 710")) gpuTier = 1;
-    }
+    // Convert GPU dynamic tier to rating base points (10-100)
+    let score = parsedGpu.tier * 10;
 
-    // Convert tier to rating base points (10-100)
-    let score = gpuTier * 10;
-
-    // CPU power multiplier score
-    if (cpuName.includes("14900") || cpuName.includes("7950") || cpuName.includes("7800x3d") || cpuName.includes("9950")) {
+    // CPU power multiplier score using parsed CPU dynamic tier
+    if (parsedCpu.tier >= 9) {
       score += 8;
-    } else if (cpuName.includes("i9") || cpuName.includes("ryzen 9")) {
+    } else if (parsedCpu.tier >= 7) {
       score += 5;
-    } else if (cpuName.includes("i7") || cpuName.includes("ryzen 7")) {
+    } else if (parsedCpu.tier >= 5) {
       score += 2;
-    } else if (cpuName.includes("i3") || cpuName.includes("dual-core") || cpuName.includes("4 cores") || cpuName.includes("core 2") || cpuName.includes("athlon") || cpuName.includes("pentium")) {
+    } else if (parsedCpu.tier <= 2) {
       score -= 10;
     }
 

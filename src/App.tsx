@@ -5,27 +5,50 @@
 
 import React, { useState, useEffect, useRef, FormEvent } from "react";
 import { Search, Sparkles, Loader2, Gamepad2, Info, Flame, Trophy, Layers, Cpu, ShieldCheck, Zap } from "lucide-react";
-import { Game, UserSpecs } from "./types";
+import { Game, UserSpecs, CyriState } from "./types";
 import { detectSystemSpecs, detectStorageSpace } from "./utils";
 import Header from "./components/Header";
 import SpecsForm from "./components/SpecsForm";
 import GameCard from "./components/GameCard";
 import AnalyzerModal from "./components/AnalyzerModal";
 
+const defaultSpecs = detectSystemSpecs();
+
 export default function App() {
-  // Specs persistence state
-  const [userSpecs, setUserSpecs] = useState<UserSpecs>(() => {
-    // 1st priority: LocalStorage
-    const saved = localStorage.getItem("cyri_user_specs");
+  // Unified specifications and override state
+  const [cyriState, setCyriState] = useState<CyriState>(() => {
+    // 1st priority: Unified state v2 LocalStorage
+    const saved = localStorage.getItem("cyri_state_v2");
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && "mode" in parsed) {
+          return parsed;
+        }
       } catch (e) {
-        console.warn("Stale cached specs, recreating...");
+        console.warn("Stale cached specs state, recreating...");
       }
     }
-    // 2nd priority: Auto-detect
-    return detectSystemSpecs();
+
+    // 2nd priority: Legacy "cyri_user_specs" migration support
+    const legacy = localStorage.getItem("cyri_user_specs");
+    if (legacy) {
+      try {
+        const specs = JSON.parse(legacy);
+        return {
+          real_specs: specs,
+          custom_specs: null,
+          mode: "real"
+        };
+      } catch (e) {}
+    }
+
+    // 3rd priority: Start fresh (null real specs, awaiting PowerShell scan)
+    return {
+      real_specs: null,
+      custom_specs: null,
+      mode: "real"
+    };
   });
 
   const [games, setGames] = useState<Game[]>([]);
@@ -37,20 +60,41 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [showDetectionToast, setShowDetectionToast] = useState(false);
 
+  // Computed active effective specs passed to comparison algorithms
+  const effectiveSpecs = cyriState.mode === "custom" && cyriState.custom_specs
+    ? cyriState.custom_specs
+    : (cyriState.real_specs || defaultSpecs);
+
   // Search input typing timer
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Quick-Bench games filter mappings if user requests benchmarks
-  // Popular heavyweight benchmark games to test any high-end limits
-  const BENCHMARK_IDS = "28,22511,41494,326243,3328,5813,3498"; // Cyberpunk, GTA V, Witcher 3, RDR2, Elden Ring, Doom Eternal, CS2, etc.
+  const BENCHMARK_IDS = "28,22511,41494,326243,3328,5813,3498";
 
-  // Save specs adjustments to cache
-  const handleSpecsChange = (updatedSpecs: UserSpecs) => {
-    setUserSpecs(updatedSpecs);
-    localStorage.setItem("cyri_user_specs", JSON.stringify(updatedSpecs));
+  // Unified State Change handler
+  const handleStateChange = (newState: CyriState) => {
+    setCyriState(newState);
+    localStorage.setItem("cyri_state_v2", JSON.stringify(newState));
   };
 
-  // Fetch games helper (handles database searching, categories tags, and heavy benchmark lists)
+  // Backwards compatible specs callback
+  const handleSpecsChange = (updatedSpecs: UserSpecs) => {
+    if (cyriState.mode === "custom") {
+      handleStateChange({
+        ...cyriState,
+        custom_specs: updatedSpecs,
+        mode: "custom"
+      });
+    } else {
+      handleStateChange({
+        ...cyriState,
+        real_specs: updatedSpecs,
+        mode: "real"
+      });
+    }
+  };
+
+  // Fetch games helper
   const fetchGamesData = async (searchStr: string, genreStr: string, activeTabSelection: "all" | "benchmarks") => {
     setLoading(true);
     setError(null);
@@ -59,10 +103,8 @@ export default function App() {
       if (searchStr.trim()) {
         url += `&search=${encodeURIComponent(searchStr.trim())}`;
       } else if (activeTabSelection === "benchmarks") {
-        // Fetch top tier meta-rated critical PC tests
         url += `&ordering=-metacritic&genres=action`;
       } else {
-        // Fallback trending catalog ordering
         url += "&ordering=-added";
       }
 
@@ -86,40 +128,19 @@ export default function App() {
 
   // Initial fetch on mount & Dynamic hardware detection on start
   useEffect(() => {
-    // Only auto-detect if nothing exists in localStorage yet
-    const saved = localStorage.getItem("cyri_user_specs");
-    if (!saved) {
-      const detected = detectSystemSpecs();
-      setUserSpecs(detected);
-      localStorage.setItem("cyri_user_specs", JSON.stringify(detected));
+    // Only show toast helper if user doesn't have a verified real specs yet
+    if (!cyriState.real_specs) {
       setShowDetectionToast(true);
-
-      // Run async-supplementary task to estimate actual remaining storage space via Origin quota
+      
+      // Let's run a soft async detection for the storage fallback
       detectStorageSpace().then((storageInfo) => {
-        if (storageInfo) {
-          setUserSpecs(prev => {
-            const updated = {
-              ...prev,
-              storage: storageInfo.storage,
-              storageFree: storageInfo.storageFree
-            };
-            localStorage.setItem("cyri_user_specs", JSON.stringify(updated));
-            return updated;
-          });
+        if (storageInfo && !cyriState.real_specs) {
+          // Softly set this in a custom specs or real specs default if null
+          console.log("Estimated storage loaded in background:", storageInfo);
         }
-      }).catch(err => console.warn("Storage async resolution deferred:", err));
-    } else {
-      try {
-        const loadedSpecs = JSON.parse(saved);
-        setUserSpecs(loadedSpecs);
-      } catch (e) {
-        const detected = detectSystemSpecs();
-        setUserSpecs(detected);
-        localStorage.setItem("cyri_user_specs", JSON.stringify(detected));
-      }
+      }).catch(err => console.warn("Storage resolution deferred:", err));
     }
 
-    // Auto dismiss detection feedback toast after 6 seconds
     const timer = setTimeout(() => {
       setShowDetectionToast(false);
     }, 6000);
@@ -158,7 +179,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans" id="app-root">
       
       {/* Brand Header */}
-      <Header detectedSpecs={userSpecs} />
+      <Header detectedSpecs={effectiveSpecs} />
 
       {/* Floating Specs Detected Toast */}
       {showDetectionToast && (
@@ -177,10 +198,10 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-200 mt-1 truncate font-semibold font-mono">
-              GPU: {userSpecs.gpu}
+              GPU: {effectiveSpecs.gpu}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
-              CPU: {userSpecs.cpu} | RAM: {userSpecs.ram}
+              CPU: {effectiveSpecs.cpu} | RAM: {effectiveSpecs.ram}
             </p>
           </div>
         </div>
@@ -191,7 +212,12 @@ export default function App() {
         
         {/* Specs and Diagnostic diagnostics form card */}
         <section aria-label="PC Specs Configurator">
-          <SpecsForm currentSpecs={userSpecs} onSpecsChange={handleSpecsChange} />
+          <SpecsForm 
+            cyriState={cyriState}
+            onStateChange={handleStateChange}
+            currentSpecs={effectiveSpecs} 
+            onSpecsChange={handleSpecsChange} 
+          />
         </section>
 
         {/* Diagnostic game directory board section */}
@@ -357,7 +383,7 @@ export default function App() {
       {selectedGame && (
         <AnalyzerModal
           game={selectedGame}
-          userSpecs={userSpecs}
+          userSpecs={effectiveSpecs}
           onClose={() => setSelectedGame(null)}
         />
       )}

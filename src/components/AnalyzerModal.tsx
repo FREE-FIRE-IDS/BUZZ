@@ -20,6 +20,40 @@ export default function AnalyzerModal({ game, userSpecs, onClose }: AnalyzerModa
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"minimum" | "recommended" | "fps">("minimum");
 
+  // Determine hardware bottlenecks and suggest concrete upgrades (GAME COMPATIBILITY ENGINE)
+  const getBottlenecksAndUpgrades = () => {
+    if (!analysis || activeTab === "fps") return [];
+    const currentTabSpecs = (analysis[activeTab] as any)?.specs;
+    if (!currentTabSpecs) return [];
+
+    const bottlenecks: { component: string; current: string; required: string; suggestion: string }[] = [];
+
+    Object.entries(currentTabSpecs).forEach(([key, specObj]: [string, any]) => {
+      if (!specObj.pass) {
+        let suggestion = "Upgrade recommended";
+        if (key === "cpu") {
+          suggestion = "Upgrade to an Intel Core i5-12400F / AMD Ryzen 5 5600 or higher (Desktop 6/8 Core recommended).";
+        } else if (key === "gpu") {
+          suggestion = "Upgrade to an NVIDIA GeForce RTX 3060 (12GB) or AMD Radeon RX 6605 XT (8GB) for high performance shaders.";
+        } else if (key === "ram") {
+          suggestion = "Upgrade memory modules to 16 GB DDR4/DDR5 to remove multi-task bottlenecks.";
+        } else if (key === "storage") {
+          suggestion = "Free up disk space on your C: drive or upgrade with a 500GB / 1TB high-speed solid-state drive (SSD).";
+        } else if (key === "os") {
+          suggestion = "Install or upgrade to Windows 10/11 64-bit to prevent software instruction set mismatch.";
+        }
+        bottlenecks.push({
+          component: key === "cpu" ? "Processor (CPU)" : key === "gpu" ? "Graphics (GPU)" : key === "ram" ? "Memory (RAM)" : key === "os" ? "Operating System" : "Storage Drive",
+          current: specObj.user,
+          required: specObj.required,
+          suggestion
+        });
+      }
+    });
+
+    return bottlenecks;
+  };
+
   // Format and grab PC platform system requirements from RAWG source platforms
   const getRawRequirements = () => {
     const pcPlat = game.platforms?.find(p => p.platform.slug === "pc");
@@ -449,6 +483,56 @@ export default function AnalyzerModal({ game, userSpecs, onClose }: AnalyzerModa
                   )}
                 </div>
               )}
+
+              {/* Hardware Bottlenecks & Smart Upgrades Panel (GAME COMPATIBILITY ENGINE) */}
+              {activeTab !== "fps" && (() => {
+                const bns = getBottlenecksAndUpgrades();
+                if (bns.length === 0) {
+                  return (
+                    <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                      <Check className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-bold text-white uppercase tracking-tight leading-none mb-1">Zero Hardware Bottlenecks Detected</h4>
+                        <p className="text-xs text-slate-300 leading-relaxed font-sans mt-1">Excellent balance! Your equipped components completely comply with the required baseline specifications for the <b>{activeTab}</b> preset.</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-350">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-500" />
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 font-mono">Bottleneck Diagnostics & Recommended Upgrades</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {bns.map((bn, idx) => (
+                        <div key={idx} className="p-4 rounded-2xl bg-slate-900 border border-slate-800/80 hover:bg-slate-900/40 transition duration-150 flex items-start gap-3.5">
+                          <div className="p-2 bg-rose-500/10 border border-rose-500/15 text-rose-450 rounded-xl shrink-0">
+                            <XCircle className="w-4 h-4 text-rose-400" />
+                          </div>
+                          <div className="min-w-0 flex-1 leading-normal">
+                            <div className="text-[10px] font-bold text-rose-400 uppercase tracking-widest leading-none mb-1 font-mono">
+                              {bn.component} Bottleneck
+                            </div>
+                            <p className="text-xs font-bold text-white truncate font-mono">
+                              Equipped: <span className="font-semibold text-slate-400">{bn.current}</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                              Minimum Demanded: <span className="text-slate-300">{bn.required}</span>
+                            </p>
+                            <div className="mt-3 bg-slate-950/40 p-2.5 rounded-lg border border-slate-850/65">
+                              <span className="block text-[8px] font-bold uppercase text-amber-400 tracking-wider font-mono">Suggested Upgrade</span>
+                              <p className="text-[10px] text-amber-300 font-sans mt-0.5 leading-snug">{bn.suggestion}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>
