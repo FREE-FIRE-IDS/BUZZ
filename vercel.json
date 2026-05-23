@@ -18,6 +18,10 @@
       "dest": "/api/check-requirements.js"
     },
     {
+      "src": "/scanner/(.*)",
+      "dest": "/scanner/$1"
+    },
+    {
       "src": "/assets/(.*)",
       "dest": "/assets/$1"
     },
