@@ -991,6 +991,20 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
           <p className="text-xs text-slate-300 leading-relaxed font-sans max-w-2xl">
             Because web browsers block websites from accessing exact CPU and Drive names due to user privacy, our safe 1-click command fetches them from your {importerPlatform === "windows" ? "Windows system" : importerPlatform === "macos" ? "Mac device" : "Linux machine"} and transfers them here instantly!
           </p>
+
+          {/* Iframe Download Security Alert Context Warning */}
+          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-200 rounded-xl p-3 text-xs leading-relaxed flex items-start gap-2 max-w-2xl font-sans">
+            <span className="text-amber-400 font-extrabold text-[13px] shrink-0">⚠️</span>
+            <div className="space-y-1">
+              <strong className="block text-white text-[11px] uppercase tracking-wider">Browser Egress Protection Notice</strong>
+              <p className="text-[10px] text-slate-300">
+                Modern web browsers restrict standard script file downloads (like <code>.bat</code> or <code>.ps1</code>) when accessed through sandboxed website preview frames.
+              </p>
+              <p className="text-[10px] text-amber-300/90">
+                👉 To solve this: Use the 100% reliable <strong>Option A (Terminal live-sync command)</strong> which requires <strong>no file downloads</strong>, or click the <strong className="text-white">"Open in New Tab"</strong> button in the upper-right corner of this screen to download the scanner files normally!
+              </p>
+            </div>
+          </div>
           
           {/* Option A: Fast Web/Terminal Live-Sync Console! (Primary Option) */}
           <div className="bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/15 rounded-xl p-4 flex flex-col gap-3 transition duration-150">
