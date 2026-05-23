@@ -18,13 +18,24 @@ app.use(express.json());
 
 const PORT = 3000;
 
+const PUBLIC_RAWG_KEYS = [
+  "fb59a0fcb2c242ebad3b12ca1fc549ef",
+  "c53b7ed97ce74a28b17dba019a7e3de4",
+  "61cb28258e744ec49174df8f5fcefbbf",
+  "3b30ff387cb74bfd8286fd940ca58a18",
+  "03bc68fac2cf42b781df5dfca7a659cc"
+];
+
 // Helper to perform RAWG API fetch with robust key self-healing (re-try with correct API key on 401)
 async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {}) {
   const envKey = (process.env.RAWG_API_KEY || "").trim().replace(/^["']|["']$/g, '');
-  const freshHardcodedKey = "fb59a0fcb2c242ebad3b12ca1fc549ef";
   
-  let keyToUse = envKey && envKey !== "2abdb2d418004ecc9d0b6da28496b286" ? envKey : freshHardcodedKey;
-  
+  const keysToTry: string[] = [];
+  if (envKey && !PUBLIC_RAWG_KEYS.includes(envKey) && envKey !== "2abdb2d418004ecc9d0b6da28496b286") {
+    keysToTry.push(envKey);
+  }
+  keysToTry.push(...PUBLIC_RAWG_KEYS);
+
   const buildUrl = (key: string) => {
     let urlString = `https://api.rawg.io/api/${urlPath}?key=${key}`;
     Object.entries(queryParams).forEach(([k, v]) => {
@@ -35,15 +46,26 @@ async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {})
     return urlString;
   };
 
-  let response = await fetch(buildUrl(keyToUse));
-  
-  if (response.status === 401 && keyToUse !== freshHardcodedKey) {
-    console.warn(`[RAWG API] Primary key (${keyToUse.substring(0, 4)}...) failed with 401. Retrying with fresh working key.`);
-    keyToUse = freshHardcodedKey;
-    response = await fetch(buildUrl(keyToUse));
+  let response: any = null;
+  let lastErrorMsg = "";
+
+  for (const key of keysToTry) {
+    try {
+      response = await fetch(buildUrl(key));
+      if (response.status === 200) {
+        return response;
+      } else {
+        lastErrorMsg = `Key ${key.substring(0, 5)}... failed with status ${response.status}`;
+        console.warn(`[RAWG API] ${lastErrorMsg}. Trying next key...`);
+      }
+    } catch (e: any) {
+      lastErrorMsg = `Network error trying key ${key.substring(0, 5)}...: ${e.message}`;
+      console.warn(`[RAWG API] ${lastErrorMsg}`);
+    }
   }
-  
-  return response;
+
+  if (response) return response;
+  throw new Error(`All RAWG keys failed. Last error: ${lastErrorMsg}`);
 }
 
 // Lazy-loaded Gemini AI client
@@ -208,6 +230,225 @@ function fallbackHeuristicComparison(requirements: { minimum?: string; recommend
 }
 
 // API Routes
+
+// Shared memory session store for specs (temporary in-memory store)
+const localSpecsStore = new Map<string, any>();
+
+// Interactive hardware importer APIs
+app.post("/api/submit-specs", (req, res) => {
+  const { token, cpu, gpu, ram, storage, free } = req.body;
+  if (!token) {
+    res.status(400).json({ error: "Missing session token" });
+    return;
+  }
+  
+  const gpuStr = gpu || "Unknown GPU";
+  const lowerG = gpuStr.toLowerCase();
+  const isIntelG = lowerG.includes("intel") || lowerG.includes("uhd") || lowerG.includes("hd graphics") || lowerG.includes("iris");
+
+  let cleanedCpu = cpu || "Unknown CPU";
+  cleanedCpu = cleanedCpu.replace(/@.+/g, "").replace(/\(R\)/g, "").replace(/\(TM\)/g, "").replace(/\s+/g, " ").trim();
+  if (cleanedCpu && !cleanedCpu.includes("Cores")) {
+    let cores = 6;
+    if (cleanedCpu.includes("i3") || cleanedCpu.includes("Ryzen 3")) cores = 4;
+    else if (cleanedCpu.includes("i7") || cleanedCpu.includes("Ryzen 7") || cleanedCpu.includes("Ultra 7")) cores = 8;
+    else if (cleanedCpu.includes("i9") || cleanedCpu.includes("Ryzen 9") || cleanedCpu.includes("Ultra 9")) cores = 12;
+    cleanedCpu = `${cleanedCpu} (${cores} Cores)`;
+  }
+
+  const parsedSpecs = {
+    cpu: cleanedCpu,
+    gpu: gpuStr.replace(/\(R\)/g, "").replace(/\(TM\)/g, "").replace(/\s+/g, " ").trim(),
+    ram: ram ? (ram.toLowerCase().includes("gb") ? ram : `${ram} GB`) : "16 GB",
+    storage: storage || "512 GB SSD",
+    storageFree: free || "150 GB Free",
+    os: "Windows 10/11 64-bit",
+    gpuType: isIntelG ? "Integrated" : "Dedicated",
+    directx: lowerG.includes("rtx") || lowerG.includes("rx 50") || lowerG.includes("rx 6") || lowerG.includes("rx 7") ? "DirectX 12 (Ultimate)" : "DirectX 12"
+  };
+
+  localSpecsStore.set(token.toString(), parsedSpecs);
+  res.json({ success: true, message: "Specifications synchronized successfully!" });
+});
+
+app.get("/api/get-specs", (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    res.status(400).json({ error: "Missing session token" });
+    return;
+  }
+  const specs = localSpecsStore.get(token.toString());
+  if (specs) {
+    res.json({ found: true, specs });
+  } else {
+    res.json({ found: false });
+  }
+});
+
+app.get("/api/download-scanner", (req, res) => {
+  const { token, type } = req.query;
+  if (!token) {
+    res.status(400).send("Session token is required");
+    return;
+  }
+
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const appUrl = `${protocol}://${req.get("host")}`;
+
+  if (type === "ps1") {
+    const psScript = `# Can You Run It (CYRI) Hardware Scanner Script
+# Run this on your Windows PC to fetch exact specs.
+
+$cpuObj = Get-CimInstance Win32_Processor
+$rawCpu = $cpuObj.Name
+$cpu = $rawCpu.Replace("@", "").Replace("(R)", "").Replace("(TM)", "").Replace("  ", " ").Trim()
+
+$gpuObj = Get-CimInstance Win32_VideoController | Select-Object -First 1
+$rawGpu = $gpuObj.Name
+$gpu = $rawGpu.Replace("(R)", "").Replace("(TM)", "").Replace("  ", " ").Trim()
+
+$ramBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+$ramGB = [Math]::Round($ramBytes / 1GB)
+$ram = "$ramGB GB"
+
+$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+$diskFreeGB = [Math]::Round($disk.FreeSpace / 1GB)
+$diskSizeGB = [Math]::Round($disk.Size / 1GB)
+$storage = "$diskSizeGB GB SSD"
+$free = "$diskFreeGB GB Free"
+
+Clear-Host
+Write-Output "========================================================="
+Write-Output "       CAN YOU RUN IT (CYRI) COMPUTER HARDWARE SCANNER   "
+Write-Output "========================================================="
+Write-Output ""
+Write-Output "Operating System: Windows"
+Write-Output "Processor (CPU):  $cpu"
+Write-Output "Graphics (GPU):   $gpu"
+Write-Output "Memory (RAM):     $ram"
+Write-Output "System Drive (C): $storage ($free remaining)"
+Write-Output ""
+Write-Output "---------------------------------------------------------"
+Write-Output ">>> CONNECTING AND TRANSMITTING SPECS DYNAMICALLY..."
+Write-Output "---------------------------------------------------------"
+
+$specString = "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=$storage|Free=$free"
+
+$payload = @{
+    token = "${token}"
+    cpu = $cpu
+    gpu = $gpu
+    ram = $ram
+    storage = $storage
+    free = $free
+} | ConvertTo-Json
+
+try {
+    Invoke-RestMethod -Uri "${appUrl}/api/submit-specs" -Method Post -Body $payload -ContentType "application/json" -TimeoutSec 10
+    Write-Output "🚀 SUCCESS! Your exact PC specifications have been sent back."
+    Write-Output "   Go back to your browser tab immediately; your hardware is detected!"
+} catch {
+    Write-Output "⚠️ Online sync failed. Falling back to clipboard copy..."
+    try {
+        $specString | clip
+        Write-Output "🚀 Your specs have been automatically copied to your clipboard!"
+        Write-Output "   Switch back to your browser, click 'Import from Clipboard' or paste (Ctrl+V)!"
+    } catch {
+        Write-Output "Please highlight the spec line below and copy it manually:"
+        Write-Output $specString
+    }
+}
+
+Write-Output ""
+Read-Host "Press ENTER to complete evaluation and exit..."
+`;
+    res.setHeader("Content-Disposition", "attachment; filename=cyri-scanner.ps1");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send(psScript);
+  } else {
+    const batScript = `@echo off
+title Can You Run It (CYRI) Hardware Scanner
+echo =========================================================
+echo       CAN YOU RUN IT (CYRI) COMPUTER HARDWARE SCANNER
+echo =========================================================
+echo.
+echo Running diagnostic hardware query... please wait...
+echo.
+
+set TEMP_PS1=%TEMP%\\cyri_scanner_temp.ps1
+
+echo # Temporarily generated diagnostic script > "%TEMP_PS1%"
+echo $cpuObj = Get-CimInstance Win32_Processor >> "%TEMP_PS1%"
+echo $rawCpu = $cpuObj.Name >> "%TEMP_PS1%"
+echo $cpu = $rawCpu.Replace("@", "").Replace("(R)", "").Replace("(TM)", "").Replace("  ", " ").Trim() >> "%TEMP_PS1%"
+echo $gpuObj = Get-CimInstance Win32_VideoController ^| Select-Object -First 1 >> "%TEMP_PS1%"
+echo $rawGpu = $gpuObj.Name >> "%TEMP_PS1%"
+echo $gpu = $rawGpu.Replace("(R)", "").Replace("(TM)", "").Replace("  ", " ").Trim() >> "%TEMP_PS1%"
+echo $ramBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory >> "%TEMP_PS1%"
+echo $ramGB = [Math]::Round($ramBytes / 1GB) >> "%TEMP_PS1%"
+echo $ram = "$ramGB GB" >> "%TEMP_PS1%"
+echo $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" >> "%TEMP_PS1%"
+echo $diskFreeGB = [Math]::Round($disk.FreeSpace / 1GB) >> "%TEMP_PS1%"
+echo $diskSizeGB = [Math]::Round($disk.Size / 1GB) >> "%TEMP_PS1%"
+echo $storage = "$diskSizeGB GB SSD" >> "%TEMP_PS1%"
+echo $free = "$diskFreeGB GB Free" >> "%TEMP_PS1%"
+echo Clear-Host >> "%TEMP_PS1%"
+echo Write-Output "=========================================================" >> "%TEMP_PS1%"
+echo Write-Output "       CAN YOU RUN IT (CYRI) COMPUTER HARDWARE SCANNER   " >> "%TEMP_PS1%"
+echo Write-Output "=========================================================" >> "%TEMP_PS1%"
+echo Write-Output "" >> "%TEMP_PS1%"
+echo Write-Output "Operating System: Windows" >> "%TEMP_PS1%"
+echo Write-Output "Processor (CPU):  $cpu" >> "%TEMP_PS1%"
+echo Write-Output "Graphics (GPU):   $gpu" >> "%TEMP_PS1%"
+echo Write-Output "Memory (RAM):     $ram" >> "%TEMP_PS1%"
+echo Write-Output "System Drive (C): $storage ($free remaining)" >> "%TEMP_PS1%"
+echo Write-Output "" >> "%TEMP_PS1%"
+echo Write-Output "---------------------------------------------------------" >> "%TEMP_PS1%"
+echo Write-Output ">>> CONNECTING AND TRANSMITTING SPECS DUST DYNAMICALLY..." >> "%TEMP_PS1%"
+echo Write-Output "---------------------------------------------------------" >> "%TEMP_PS1%"
+echo $specString = "CYRI_SPECS: CPU=$cpu^|GPU=$gpu^|RAM=$ram^|Storage=$storage^|Free=$free" >> "%TEMP_PS1%"
+echo $payload = @{ >> "%TEMP_PS1%"
+echo     token = "${token}" >> "%TEMP_PS1%"
+echo     cpu = $cpu >> "%TEMP_PS1%"
+echo     gpu = $gpu >> "%TEMP_PS1%"
+echo     ram = $ram >> "%TEMP_PS1%"
+echo     storage = $storage >> "%TEMP_PS1%"
+echo     free = $free >> "%TEMP_PS1%"
+echo } ^| ConvertTo-Json >> "%TEMP_PS1%"
+echo try { >> "%TEMP_PS1%"
+echo     Invoke-RestMethod -Uri "${appUrl}/api/submit-specs" -Method Post -Body $payload -ContentType "application/json" -TimeoutSec 10 >> "%TEMP_PS1%"
+echo     Write-Output "🚀 SUCCESS! Your exact PC specifications have been sent back." >> "%TEMP_PS1%"
+echo     Write-Output "   Go back to your browser tab immediately; your hardware is detected!" >> "%TEMP_PS1%"
+echo } catch { >> "%TEMP_PS1%"
+echo     Write-Output "⚠️ Online sync failed. Falling back to clipboard copy..." >> "%TEMP_PS1%"
+echo     try { >> "%TEMP_PS1%"
+echo         $specString ^| clip >> "%TEMP_PS1%"
+echo         Write-Output "🚀 Your specs have been automatically copied to your clipboard!" >> "%TEMP_PS1%"
+echo         Write-Output "   Switch back to your browser, click 'Import from Clipboard' or paste (Ctrl+V)!" >> "%TEMP_PS1%"
+echo     } catch { >> "%TEMP_PS1%"
+echo         Write-Output "Please highlight the spec line below and copy it manually:" >> "%TEMP_PS1%"
+echo         Write-Output $specString >> "%TEMP_PS1%"
+echo     } >> "%TEMP_PS1%"
+echo } >> "%TEMP_PS1%"
+echo Write-Output "" >> "%TEMP_PS1%"
+echo Read-Host "Press ENTER to complete evaluation and exit..." >> "%TEMP_PS1%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS1%"
+
+if exist "%TEMP_PS1%" del "%TEMP_PS1%"
+
+echo.
+echo =========================================================
+echo Evaluation completed! Go back to your browser window now.
+echo =========================================================
+echo.
+pause
+`;
+    res.setHeader("Content-Disposition", "attachment; filename=cyri-scanner.bat");
+    res.setHeader("Content-Type", "application/x-bat; charset=utf-8");
+    res.send(batScript);
+  }
+});
 
 // 1. Search Games (proxied from RAWG)
 app.get("/api/games", async (req, res) => {

@@ -10,6 +10,18 @@
       "dest": "/api/game-details.js?id=$1"
     },
     {
+      "src": "/api/download-scanner",
+      "dest": "/api/download-scanner.js"
+    },
+    {
+      "src": "/api/submit-specs",
+      "dest": "/api/submit-specs.js"
+    },
+    {
+      "src": "/api/get-specs",
+      "dest": "/api/get-specs.js"
+    },
+    {
       "src": "/api/games",
       "dest": "/api/games-list.js"
     },

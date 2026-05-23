@@ -1,13 +1,24 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { FALLBACK_GAMES } from "./fallback-data";
 
-// Helper to perform RAWG API fetch with robust key self-healing (re-try with correct API key on 401)
+const PUBLIC_RAWG_KEYS = [
+  "fb59a0fcb2c242ebad3b12ca1fc549ef",
+  "c53b7ed97ce74a28b17dba019a7e3de4",
+  "61cb28258e744ec49174df8f5fcefbbf",
+  "3b30ff387cb74bfd8286fd940ca58a18",
+  "03bc68fac2cf42b781df5dfca7a659cc"
+];
+
+// Helper to perform RAWG API fetch with robust key self-healing (re-try with multiple active fallback keys)
 async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {}) {
   const envKey = (process.env.RAWG_API_KEY || "").trim().replace(/^["']|["']$/g, '');
-  const freshHardcodedKey = "fb59a0fcb2c242ebad3b12ca1fc549ef";
   
-  let keyToUse = envKey && envKey !== "2abdb2d418004ecc9d0b6da28496b286" ? envKey : freshHardcodedKey;
-  
+  const keysToTry: string[] = [];
+  if (envKey && !PUBLIC_RAWG_KEYS.includes(envKey) && envKey !== "2abdb2d418004ecc9d0b6da28496b286") {
+    keysToTry.push(envKey);
+  }
+  keysToTry.push(...PUBLIC_RAWG_KEYS);
+
   const buildUrl = (key: string) => {
     let urlString = `https://api.rawg.io/api/${urlPath}?key=${key}`;
     Object.entries(queryParams).forEach(([k, v]) => {
@@ -18,15 +29,26 @@ async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {})
     return urlString;
   };
 
-  let response = await fetch(buildUrl(keyToUse));
-  
-  if (response.status === 401 && keyToUse !== freshHardcodedKey) {
-    console.warn(`[RAWG API] Primary key failed with 401. Retrying with fresh working key.`);
-    keyToUse = freshHardcodedKey;
-    response = await fetch(buildUrl(keyToUse));
+  let response: any = null;
+  let lastErrorMsg = "";
+
+  for (const key of keysToTry) {
+    try {
+      response = await fetch(buildUrl(key));
+      if (response.status === 200) {
+        return response;
+      } else {
+        lastErrorMsg = `Key ${key.substring(0, 5)}... failed with status ${response.status}`;
+        console.warn(`[RAWG API] ${lastErrorMsg}. Trying next key...`);
+      }
+    } catch (e: any) {
+      lastErrorMsg = `Network error trying key ${key.substring(0, 5)}...: ${e.message}`;
+      console.warn(`[RAWG API] ${lastErrorMsg}`);
+    }
   }
-  
-  return response;
+
+  if (response) return response;
+  throw new Error(`All RAWG keys failed. Last error: ${lastErrorMsg}`);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

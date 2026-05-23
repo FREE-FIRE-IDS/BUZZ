@@ -143,6 +143,15 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
   const [specs, setSpecs] = useState<UserSpecs>(currentSpecs);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Dynamic sync session token for exact hardware scanner
+  const [token] = useState<string>(() => {
+    const existing = localStorage.getItem("cyri_session_token");
+    if (existing) return existing;
+    const newToken = Math.random().toString(36).substring(2, 10).toUpperCase();
+    localStorage.setItem("cyri_session_token", newToken);
+    return newToken;
+  });
+
   // PowerShell Specs Import Panel states
   const [showPsImporter, setShowPsImporter] = useState(false);
   const [psPasteText, setPsPasteText] = useState("");
@@ -237,7 +246,8 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
 
   const downloadFile = async (filename: "cyri-scanner.bat" | "cyri-scanner.ps1") => {
     try {
-      const response = await fetch(`/scanner/${filename}`);
+      const typeParam = filename.endsWith(".ps1") ? "ps1" : "bat";
+      const response = await fetch(`/api/download-scanner?token=${token}&type=${typeParam}`);
       if (!response.ok) throw new Error("File fetch failed");
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -249,9 +259,10 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (e) {
-      console.error("Blob download failed, falling back to direct target=_blank anchor anchor link:", e);
+      console.error("Blob download failed, falling back to direct anchor link:", e);
+      const typeParam = filename.endsWith(".ps1") ? "ps1" : "bat";
       const link = document.createElement("a");
-      link.href = `/scanner/${filename}`;
+      link.href = `/api/download-scanner?token=${token}&type=${typeParam}`;
       link.download = filename;
       link.target = "_blank";
       document.body.appendChild(link);
@@ -259,6 +270,42 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
       document.body.removeChild(link);
     }
   };
+
+  // Poll for background automatic specifications transmission
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (showPsImporter) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/get-specs?token=${token}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.found && data.specs) {
+              const finalSpecs: UserSpecs = data.specs;
+              setSpecs(finalSpecs);
+              setGpuInput(finalSpecs.gpu);
+              setCpuInput(finalSpecs.cpu);
+              onStateChange({
+                real_specs: finalSpecs,
+                custom_specs: null,
+                mode: "real"
+              });
+              onSpecsChange(finalSpecs);
+              setShowPsImporter(false);
+              setIsEditing(false);
+              setPsPasteText("");
+              setImportError("");
+            }
+          }
+        } catch (err) {
+          console.warn("[Session Poll] Specs sync failed to retrieve:", err);
+        }
+      }, 2000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showPsImporter, token, onStateChange, onSpecsChange]);
 
   const handleDownloadScanner = () => {
     // Default to downloading the highly reliable .bat file for double-click simplicity on Windows
@@ -799,16 +846,17 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
               </button>
             </div>
           ) : (
-            /* Scanned: Detect Again + Edit appear */
+            /* Scanned: Reset to Real Specs + Edit appear */
             <>
               {cyriState.mode === "custom" && (
                 <button
                   onClick={handleDetectAgain}
                   type="button"
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-extrabold font-mono transition text-slate-200 hover:text-white border border-slate-700 cursor-pointer shadow-md"
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-black uppercase tracking-wider transition border border-amber-500/30 cursor-pointer shadow-md"
+                  title="Undo all custom changes and restore your original PC specifications"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  Detect Again (Restore Scan)
+                  Reset to Real Specs
                 </button>
               )}
 
@@ -839,119 +887,10 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
               </div>
             </>
           )}
-
-          {/* Database management toggle always accessible for config tracking */}
-          <button
-            onClick={() => {
-              setShowDbSync(!showDbSync);
-              setShowPsImporter(false);
-            }}
-            type="button"
-            className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-bold font-mono transition duration-150 border cursor-pointer ${
-              showDbSync 
-                ? "bg-slate-755 text-white border-slate-650" 
-                : "bg-slate-950/20 hover:bg-slate-850 text-slate-400 border-slate-800"
-            }`}
-            title="Database Sync Settings"
-          >
-            <Cpu className="w-3 h-3 text-slate-500" />
-            HW DB
-          </button>
         </div>
       </div>
 
-      {/* Hardware Database Sync Importer Panel (DATA UPDATE SYSTEM) */}
-      {showDbSync && (
-        <div className="mb-6 p-5 rounded-2xl bg-emerald-950/10 border border-emerald-500/20 shadow-inner space-y-4 animate-in fade-in slide-in-from-top-4 duration-250">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-emerald-400" />
-              <div>
-                <h3 className="text-sm font-bold text-white">Periodic/Manual Database Synchronization</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5 font-mono">Database contains <b>{POPULAR_GPUS.length} GPUs</b> and <b>{POPULAR_CPUS.length} CPUs</b></p>
-              </div>
-            </div>
-            <button
-              onClick={loadDefaultToForm}
-              type="button"
-              className="px-3.5 py-2 bg-emerald-505 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition duration-150 shadow shadow-emerald-500/10 cursor-pointer"
-            >
-              Load Live Hardware JSON to Edit
-            </button>
-          </div>
 
-          <p className="text-xs text-slate-300 leading-relaxed font-sans max-w-2xl">
-            Need to update cards or import custom configurations? Paste a fresh, compliant JSON array matching the structure of <code className="text-emerald-400 text-[10px]">HardwareMetadata[]</code> to manually override and reload live databases.
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <span className="block text-[10px] text-slate-450 font-mono tracking-wider uppercase">GPU Database Override JSON (Array)</span>
-              <textarea
-                className="w-full h-48 bg-slate-950/80 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3 text-[10px] text-emerald-200 font-mono focus:outline-none placeholder-slate-600 shadow-inner"
-                placeholder='[\n  { "name": "NVIDIA GeForce RTX 6090", "vram": "48 GB", "directx": "DirectX 12 (Ultimate)", "tier": 10 }\n]'
-                value={gpuJsonPaste}
-                onChange={(e) => {
-                  setGpuJsonPaste(e.target.value);
-                  setDbSyncError("");
-                }}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <span className="block text-[10px] text-slate-450 font-mono tracking-wider uppercase">CPU Database Override JSON (Array)</span>
-              <textarea
-                className="w-full h-48 bg-slate-950/80 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3 text-[10px] text-emerald-200 font-mono focus:outline-none placeholder-slate-600 shadow-inner"
-                placeholder='[\n  { "name": "Intel Core Ultra 9 385K", "cores": 28, "tier": 10 }\n]'
-                value={cpuJsonPaste}
-                onChange={(e) => {
-                  setCpuJsonPaste(e.target.value);
-                  setDbSyncError("");
-                }}
-              />
-            </div>
-          </div>
-
-          {dbSyncError && (
-            <p className="text-[11px] text-rose-400 font-semibold font-mono bg-rose-500/5 p-3 rounded-xl border border-rose-500/10">{dbSyncError}</p>
-          )}
-
-          {dbSyncFeedback && (
-            <p className="text-[11px] text-emerald-400 font-semibold font-mono bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10">{dbSyncFeedback}</p>
-          )}
-
-          <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-800/55">
-            <button
-              type="button"
-              onClick={handleResetDatabase}
-              className="px-4 py-2 border border-rose-500/30 hover:border-rose-500/50 text-[11px] font-bold text-rose-400 hover:text-white hover:bg-rose-500/5 rounded-xl transition duration-150 cursor-pointer"
-            >
-              Clear Overrides (Reset to built-in)
-            </button>
-            
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setGpuJsonPaste("");
-                  setCpuJsonPaste("");
-                  setShowDbSync(false);
-                }}
-                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-xs font-bold text-slate-400 hover:text-white rounded-xl transition duration-150 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDatabaseSync}
-                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 rounded-xl transition duration-150 shadow-md shadow-emerald-500/10 cursor-pointer"
-              >
-                Apply Live Sync Updates
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* First-Time Scan Recommendation Banner */}
       {cyriState.real_specs === null && (
@@ -1126,30 +1065,7 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
         </div>
       )}
 
-      {/* Preset Selectors */}
-      <div className="mb-6 bg-slate-950/20 p-4 border border-slate-800/40 rounded-2xl">
-        <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1">
-          <Layers className="w-3.5 h-3.5 text-emerald-400" />
-          Quick Hardware Benchmarks presets
-        </label>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          {HARDWARE_PRESETS.map((preset) => (
-            <button
-              key={preset.name}
-              onClick={() => handleApplyPreset(preset.specs)}
-              type="button"
-              className="px-3 py-2 text-left rounded-2xl bg-slate-850 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-xs transition duration-200 group cursor-pointer"
-            >
-              <div className="font-extrabold text-slate-200 group-hover:text-emerald-400 transition truncate">
-                {preset.name.split(" (")[0]}
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate uppercase">
-                {preset.specs.ram} • {preset.specs.gpu.split("GeForce ")[1] || preset.specs.gpu.split("Radeon ")[1] || "IGPU"}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>      {/* Inputs Section */}
+      {/* Inputs Section */}
       {isDetecting ? (
         <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-950/40 border border-slate-800/80 rounded-3xl space-y-4 animate-in fade-in duration-200">
           <div className="relative flex items-center justify-center animate-bounce duration-1000">
@@ -1416,24 +1332,7 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
               <div>
                 <p className="text-sm font-semibold text-slate-200 font-mono break-words">{specs.cpu}</p>
                 
-                {/* Browser security helper guidance note */}
-                <div className="mt-2 text-[10px] text-slate-400 bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-xl space-y-1">
-                  <p className="font-sans leading-relaxed">
-                    <span className="text-emerald-400 font-bold">🔒 Secure Browser Active</span>: Web browsers hide exact hardware names to prevent tracking. We benchmarked your engine to find this best-fit CPU guess.
-                  </p>
-                  <p className="font-sans text-slate-500 text-[9px] leading-relaxed">
-                    For <span className="text-indigo-400 font-bold">100% exact auto-detection</span> of your real PC processor model, use our <span className="text-indigo-400 font-bold">1-Click PC Spec Importer</span> at the top.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={swapCpuBrand}
-                  className="mt-2 text-[9px] text-sky-400 hover:text-sky-300 font-bold font-mono tracking-tight uppercase flex items-center gap-1.5 transition-all hover:brightness-110 cursor-pointer"
-                >
-                  <RefreshCw className="w-2.5 h-2.5 " />
-                  Swap to {specs.cpu.includes("AMD") || specs.cpu.includes("Ryzen") ? "Intel Equivalent" : "Ryzen Equivalent"}
-                </button>
+                {/* Clean CPU name display */}
               </div>
             )}
           </div>
