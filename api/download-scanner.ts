@@ -162,7 +162,7 @@ echo.
 pause
 `;
     res.setHeader("Content-Disposition", "attachment; filename=cyri-scanner.bat");
-    res.setHeader("Content-Type", "application/x-bat; charset=utf-8");
+    res.setHeader("Content-Type", "application/octet-stream; charset=utf-8");
     res.status(200).send(batScript);
   }
 }

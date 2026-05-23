@@ -231,17 +231,32 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
     setShowPsImporter(false);
   };
 
+  const [copyFeedbackInstant, setCopyFeedbackInstant] = useState(false);
+
   const windowsCommand = `chcp 65001 >$null; $cpu = (Get-CimInstance Win32_Processor).Name; $gpuObj = Get-CimInstance Win32_VideoController | Select-Object -First 1; $gpu = $gpuObj.Name; $ram = "$([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)) GB"; $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $free = "$([Math]::Round($disk.FreeSpace/1GB)) GB Remaining"; $tot = "$([Math]::Round($disk.Size/1GB)) GB SSD"; echo "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=$tot|Free=$free"`;
 
   const macosCommand = `cpu=$(sysctl -n machdep.cpu.brand_string); gpu=$(system_profiler SPDisplaysDataType | grep "Chipset Model" | head -n 1 | cut -d: -f2 | xargs); ram="$(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"; disk_tot=$(df -h / | tail -1 | awk '{print $2}'); disk_free=$(df -h / | tail -1 | awk '{print $4}'); echo "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
 
   const linuxCommand = `cpu=$(lscpu | grep "Model name:" | head -n 1 | cut -d: -f2- | xargs); gpu=$(lspci | grep -i -E "vga|3d" | head -n 1 | cut -d: -f3 | xargs); ram="\$(free -g | grep Mem: | awk '{print \$2}') GB"; disk_tot=\$(df -h / | tail -1 | awk '{print \$2}'); disk_free=\$(df -h / | tail -1 | awk '{print \$4}'); echo "CYRI_SPECS: CPU=\$cpu|GPU=\$gpu|RAM=\$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
 
+  const windowsCommandInstant = `$t="${token}";$u="${typeof window !== "undefined" ? window.location.origin : ""}";chcp 65001 >$null;$cpu=(Get-CimInstance Win32_Processor).Name.Replace("@","").Replace("(R)","").Replace("(TM)","").Replace("  "," ").Trim();$gpu=(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name.Replace("(R)","").Replace("(TM)","").Replace("  "," ").Trim();$ram="$([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)) GB";$disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'";$free="$([Math]::Round($disk.FreeSpace/1GB)) GB Free";$tot="$([Math]::Round($disk.Size/1GB)) GB SSD";$p=@{token=$t;cpu=$cpu;gpu=$gpu;ram=$ram;storage=$tot;free=$free}|ConvertTo-Json;try{Invoke-RestMethod -Uri "$u/api/submit-specs" -Method Post -Body $p -ContentType "application/json" -TimeoutSec 10;Write-Host "";Write-Host "=========================================================" -ForegroundColor Green;Write-Host "     🚀 SUCCESS! COMPUTER CONFIGURATION DETECTED!       " -ForegroundColor Green;Write-Host "=========================================================" -ForegroundColor Green;Write-Host "Your PC hardware is sync-linked! Head back to your browser." -ForegroundColor Green;Write-Host ""}catch{Write-Host "";Write-Host "⚠️ Sync failed. Copy this specs line instead:" -ForegroundColor Yellow;Write-Host "CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=$tot|Free=$free" -ForegroundColor White;Write-Host ""}`;
+
+  const macosCommandInstant = `t="${token}"; u="${typeof window !== "undefined" ? window.location.origin : ""}"; cpu=$(sysctl -n machdep.cpu.brand_string); gpu=$(system_profiler SPDisplaysDataType | grep "Chipset Model" | head -n 1 | cut -d: -f2 | xargs); ram="$(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"; disk_tot=$(df -h / | tail -1 | awk '{print $2}'); disk_free=$(df -h / | tail -1 | awk '{print $4}'); payload="{\\"token\\":\\"$t\\",\\"cpu\\":\\"$cpu\\",\\"gpu\\":\\"$gpu\\",\\"ram\\":\\"$ram\\",\\"storage\\":\\"$disk_tot SSD\\",\\"free\\":\\"$disk_free Free\\"}"; curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$u/api/submit-specs" > /dev/null && echo "🚀 SUCCESS! Mac specs linked successfully. Head back to your browser!" || echo "⚠️ Sync failed. Copy this spec line instead: CYRI_SPECS: CPU=$cpu|GPU=$gpu|RAM=$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
+
+  const linuxCommandInstant = `t="${token}"; u="${typeof window !== "undefined" ? window.location.origin : ""}"; cpu=$(lscpu | grep "Model name:" | head -n 1 | cut -d: -f2- | xargs); gpu=$(lspci | grep -i -E "vga|3d" | head -n 1 | cut -d: -f3 | xargs); ram="\s\\$(free -g | grep Mem: | awk '{print \$2}') GB"; disk_tot=\\$(df -h / | tail -1 | awk '{print \$2}'); disk_free=\\$(df -h / | tail -1 | awk '{print \$4}'); payload="{\\"token\\":\\"$t\\",\\"cpu\\":\\"$cpu\\",\\"gpu\\":\\"$gpu\\",\\"ram\\":\\"$ram\\",\\"storage\\":\\"$disk_tot SSD\\",\\"free\\":\\"$disk_free Free\\"}"; curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$u/api/submit-specs" > /dev/null && echo "🚀 SUCCESS! Linux specs linked successfully. Head back to your browser!" || echo "⚠️ Sync failed. Copy this spec line instead: CYRI_SPECS: CPU=\$cpu|GPU=\$gpu|RAM=\$ram|Storage=\${disk_tot} SSD|Free=\${disk_free} Remaining"`;
+
   const copyPsCommand = () => {
     const cmd = importerPlatform === "windows" ? windowsCommand : importerPlatform === "macos" ? macosCommand : linuxCommand;
     navigator.clipboard.writeText(cmd);
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 3000);
+  };
+
+  const copyInstantCommand = () => {
+    const cmd = importerPlatform === "windows" ? windowsCommandInstant : importerPlatform === "macos" ? macosCommandInstant : linuxCommandInstant;
+    navigator.clipboard.writeText(cmd);
+    setCopyFeedbackInstant(true);
+    setTimeout(() => setCopyFeedbackInstant(false), 3000);
   };
 
   const downloadFile = async (filename: "cyri-scanner.bat" | "cyri-scanner.ps1") => {
@@ -977,11 +992,42 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
             Because web browsers block websites from accessing exact CPU and Drive names due to user privacy, our safe 1-click command fetches them from your {importerPlatform === "windows" ? "Windows system" : importerPlatform === "macos" ? "Mac device" : "Linux machine"} and transfers them here instantly!
           </p>
           
-          {/* Download Buttons Section specifically for Windows */}
+          {/* Option A: Fast Web/Terminal Live-Sync Console! (Primary Option) */}
+          <div className="bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/15 rounded-xl p-4 flex flex-col gap-3 transition duration-150">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-mono px-2 py-0.5 rounded border border-emerald-500/20 font-black uppercase">
+                  ⚡ Option A (Fastest & 100% Reliable – No Downloads)
+                </span>
+                <h4 className="text-xs font-extrabold text-white">
+                  Copy Live-Sync Terminal Command
+                </h4>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Requires <strong>no files downloaded</strong>. Fully immune to browser security blocks. Simply copy this 1-line command, paste it into your device terminal, and watch this page update automatically!
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyInstantCommand}
+                className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition duration-150 cursor-pointer flex items-center gap-1.5 self-start md:self-center shrink-0"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {copyFeedbackInstant ? "Copied!" : "Copy Sync Command"}
+              </button>
+            </div>
+            
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-emerald-500/10 flex items-center gap-2">
+              <code className="text-[10px] text-emerald-400 font-mono select-all truncate flex-1">
+                {importerPlatform === "windows" ? windowsCommandInstant : importerPlatform === "macos" ? macosCommandInstant : linuxCommandInstant}
+              </code>
+            </div>
+          </div>
+
+          {/* Option B: Download Buttons Section specifically for Windows */}
           {importerPlatform === "windows" && (
             <div className="bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/15 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-150">
               <div className="space-y-1">
-                <span className="text-[10px] bg-indigo-500/10 text-indigo-300 font-mono px-2 py-0.5 rounded border border-indigo-500/20 font-black uppercase">Option A (Easiest - Double Click Run)</span>
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-300 font-mono px-2 py-0.5 rounded border border-indigo-500/20 font-black uppercase">Option B (Auto-Run Script)</span>
                 <h4 className="text-xs font-extrabold text-white">Download Automated Windows Scanner (.bat)</h4>
                 <p className="text-[10px] text-slate-400 leading-normal">
                   Saves manual command typing. Just double-click to run! It automatically copies specifications directly to your clipboard.
@@ -1009,7 +1055,7 @@ export default function SpecsForm({ cyriState, onStateChange, currentSpecs, onSp
 
           <div className="space-y-2">
             <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">
-              {importerPlatform === "windows" ? "Option B: Manually Copy And Run Command" : "Step 1: Copy this safe command"}
+              {importerPlatform === "windows" ? "Option C: Manually Copy And Feed Specifications" : "Step 1: Copy this safe command"}
             </span>
             <div className="flex items-center gap-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
               <code className="text-[10px] text-indigo-300 font-mono select-all truncate flex-1">

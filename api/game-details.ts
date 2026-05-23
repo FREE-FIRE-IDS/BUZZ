@@ -33,8 +33,11 @@ async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {})
   let lastErrorMsg = "";
 
   for (const key of keysToTry) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
     try {
-      response = await fetch(buildUrl(key));
+      response = await fetch(buildUrl(key), { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (response.status === 200) {
         return response;
       } else {
@@ -42,7 +45,8 @@ async function fetchRawg(urlPath: string, queryParams: Record<string, any> = {})
         console.warn(`[RAWG API] ${lastErrorMsg}. Trying next key...`);
       }
     } catch (e: any) {
-      lastErrorMsg = `Network error trying key ${key.substring(0, 5)}...: ${e.message}`;
+      clearTimeout(timeoutId);
+      lastErrorMsg = `Network error/Timeout trying key ${key.substring(0, 5)}...: ${e.message}`;
       console.warn(`[RAWG API] ${lastErrorMsg}`);
     }
   }
